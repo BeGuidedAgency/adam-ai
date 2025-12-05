@@ -1,22 +1,29 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   try {
     const { text } = await req.json();
 
-    if (!text || typeof text !== "string" || !text.trim()) {
-      return new Response("Missing text", { status: 400 });
+    if (!text) {
+      return NextResponse.json(
+        { error: "No text provided" },
+        { status: 400 }
+      );
     }
 
     const apiKey = process.env.ELEVENLABS_API_KEY;
-    const voiceId = process.env.ELEVENLABS_VOICE_ID;
+    const voiceId = process.env.ELEVENLABS_ADAM_VOICE_ID;
 
     if (!apiKey || !voiceId) {
-      console.error("Missing ELEVENLABS_API_KEY or ELEVENLABS_VOICE_ID");
-      return new Response("Voice config missing", { status: 500 });
+      console.error("VOICE ERROR: Missing API key or voice ID");
+      return NextResponse.json(
+        { error: "Missing ELEVENLABS_API_KEY or ELEVENLABS_ADAM_VOICE_ID" },
+        { status: 500 }
+      );
     }
 
-    const elevenRes = await fetch(
+    // Build request to ElevenLabs
+    const res = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
         method: "POST",
@@ -29,30 +36,38 @@ export async function POST(req: NextRequest) {
           text,
           model_id: "eleven_multilingual_v2",
           voice_settings: {
-            stability: 0.5,
+            stability: 0.4,
             similarity_boost: 0.8,
           },
         }),
       }
     );
 
-    if (!elevenRes.ok || !elevenRes.body) {
-      console.error(
-        "ElevenLabs error:",
-        elevenRes.status,
-        await elevenRes.text().catch(() => "")
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error("ElevenLabs TTS error:", res.status, res.statusText, errorBody);
+
+      return NextResponse.json(
+        {
+          error: "ElevenLabs TTS failed",
+          status: res.status,
+          details: errorBody,
+        },
+        { status: 500 }
       );
-      return new Response("Failed to generate audio", { status: 500 });
     }
 
-    return new Response(elevenRes.body, {
-      headers: {
-        "Content-Type": "audio/mpeg",
-        "Cache-Control": "no-cache",
-      },
+    const audio = await res.arrayBuffer();
+
+    return new NextResponse(audio, {
+      status: 200,
+      headers: { "Content-Type": "audio/mpeg" },
     });
   } catch (err) {
-    console.error("Error in /api/voice:", err);
-    return new Response("Server error", { status: 500 });
+    console.error("VOICE API FATAL ERROR:", err);
+    return NextResponse.json(
+      { error: "Failed to generate voice" },
+      { status: 500 }
+    );
   }
 }

@@ -2,7 +2,37 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
+import Markdown from "react-markdown";
+import { ThemeToggle } from "../components/theme-toggle";
 
+// ===============================
+// BRAND TOOLTIP COMPONENT
+// ===============================
+const Tooltip = ({
+  children,
+  text,
+}: {
+  children: React.ReactNode;
+  text: string;
+}) => (
+  <div className="relative group inline-flex">
+    {children}
+    <div
+      className="
+        absolute bottom-full left-1/2 -translate-x-1/2 mb-2
+        whitespace-nowrap rounded-md bg-[#001f3e] text-[#f2fdff]
+        px-2 py-1 text-[10px] opacity-0 group-hover:opacity-100
+        transition-opacity shadow-md pointer-events-none
+      "
+    >
+      {text}
+    </div>
+  </div>
+);
+
+// ===============================
+// MAIN PAGE COMPONENT
+// ===============================
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -21,7 +51,6 @@ type SupabaseUser = {
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Page() {
@@ -38,21 +67,40 @@ export default function Page() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
 
-  // inline rename state
+  // Voice state
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceSession, setVoiceSession] = useState(false);
+  const [voiceModeType, setVoiceModeType] = useState<"voice_text" | "voice_only">(
+    "voice_text"
+  );
+  const [voiceModeMenuOpen, setVoiceModeMenuOpen] = useState(false);
+
   const [editingConversationId, setEditingConversationId] = useState<
     string | null
   >(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
 
+  const hasMessages = messages.length > 0;
+  const isVoiceOnlyActive = voiceSession && voiceModeType === "voice_only";
+
+  // Status text in the big bubble
+  const voiceStatusLabel = speakingId
+    ? "Adam is speaking…"
+    : isRecording
+    ? "Listening…"
+    : loading
+    ? "Thinking…"
+    : "Ready";
+
   // ──────────────────────────
-  // AUTH: load session on mount
+  // AUTH INIT
   // ──────────────────────────
   useEffect(() => {
     const initAuth = async () => {
@@ -85,18 +133,19 @@ export default function Page() {
     initAuth();
   }, []);
 
-  // Load conversations whenever user changes
+  // load conversations when user changes
   useEffect(() => {
     if (!user) {
       setConversations([]);
       setActiveConversationId(null);
       setMessages([]);
+      setVoiceSession(false);
       return;
     }
     loadConversations(user.id);
   }, [user]);
 
-  // Auto-scroll when messages change
+  // auto-scroll chat
   useEffect(() => {
     if (!chatContainerRef.current) return;
     const el = chatContainerRef.current;
@@ -114,10 +163,8 @@ export default function Page() {
         email: authEmail.trim(),
         password: authPassword,
       });
-      if (error) {
-        setAuthError(error.message);
-      }
-    } catch (err: any) {
+      if (error) setAuthError(error.message);
+    } catch (err) {
       console.error("Sign-in error:", err);
       setAuthError("Failed to sign in");
     }
@@ -131,12 +178,9 @@ export default function Page() {
         email: authEmail.trim(),
         password: authPassword,
       });
-      if (error) {
-        setAuthError(error.message);
-      } else {
-        setAuthError("Check your email to confirm your account.");
-      }
-    } catch (err: any) {
+      if (error) setAuthError(error.message);
+      else setAuthError("Check your email to confirm your account.");
+    } catch (err) {
       console.error("Sign-up error:", err);
       setAuthError("Failed to sign up");
     }
@@ -149,6 +193,7 @@ export default function Page() {
       setConversations([]);
       setActiveConversationId(null);
       setMessages([]);
+      setVoiceSession(false);
     } catch (err) {
       console.error("Sign-out error:", err);
     }
@@ -175,9 +220,7 @@ export default function Page() {
     try {
       setMessages([]);
 
-      const res = await fetch(
-        `/api/conversations/${conversationId}/messages`
-      );
+      const res = await fetch(`/api/conversations/${conversationId}/messages`);
       if (!res.ok) {
         console.error(
           "Failed to load messages:",
@@ -210,9 +253,7 @@ export default function Page() {
       body: JSON.stringify({ userId: user.id }),
     });
 
-    if (!res.ok) {
-      throw new Error("Failed to create conversation");
-    }
+    if (!res.ok) throw new Error("Failed to create conversation");
 
     const data = await res.json();
     const newId: string = data.id;
@@ -227,19 +268,18 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // CORE SEND MESSAGE (with isFirstMessage → auto-titles)
+  // CHAT / SEND MESSAGE
   // ──────────────────────────
-  async function sendMessage(question: string, opts?: { autoVoice?: boolean }) {
-    if (!user) {
-      console.warn("Tried to send message while not logged in");
-      return;
-    }
+  async function sendMessage(
+    question: string,
+    opts?: { autoVoice?: boolean }
+  ) {
+    if (!user) return;
 
     const q = question.trim();
     if (!q || loading) return;
 
     setLoading(true);
-
     const convId = await ensureConversation();
 
     const userMessage: Message = {
@@ -250,9 +290,9 @@ export default function Page() {
 
     const assistantId = crypto.randomUUID();
     const historyForApi = [...messages, userMessage];
-
     const isFirstMessage = messages.length === 0;
 
+    // For voice-only we still keep a text history in state, just not shown.
     setMessages([
       ...historyForApi,
       { id: assistantId, role: "assistant", content: "" },
@@ -274,36 +314,41 @@ export default function Page() {
         }),
       });
 
-      if (!res.ok || !res.body) {
+      if (!res.ok) {
+        console.error("Chat API error:", res.status, await res.text());
         throw new Error("No response from /api/chat");
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
+      const data = await res.json();
+      finalAssistantText =
+        data?.message?.content ??
+        "Adam couldn't form a response. Check /api/chat.";
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === assistantId ? { ...m, content: finalAssistantText } : m
+        )
+      );
 
-        const chunk = decoder.decode(value, { stream: true });
-        if (!chunk) continue;
-
-        finalAssistantText += chunk;
-
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantId ? { ...m, content: finalAssistantText } : m
-          )
-        );
+      // Voice output: both modes use the same backend.
+      if ((opts?.autoVoice || voiceSession) && finalAssistantText.trim()) {
+        await speakMessage(assistantId, finalAssistantText, {
+          onEnded: () => {
+            // In voice-only mode, automatically start listening again
+            if (voiceSession && voiceModeType === "voice_only" && !isRecording) {
+              startRecording().catch(err =>
+                console.error("startRecording after reply failed:", err)
+              );
+            }
+          },
+        });
       }
 
-      if (opts?.autoVoice && finalAssistantText.trim()) {
-        await speakMessage(assistantId, finalAssistantText);
+      if (user) {
+        loadConversations(user.id);
       }
-
-      loadConversations(user.id);
     } catch (err) {
-      console.error(err);
+      console.error("sendMessage error:", err);
       setMessages(prev =>
         prev.map(m =>
           m.id === assistantId
@@ -325,13 +370,17 @@ export default function Page() {
     if (!input.trim()) return;
     const q = input.trim();
     setInput("");
-    await sendMessage(q, { autoVoice: false });
+    await sendMessage(q);
   }
 
   // ──────────────────────────
-  // VOICE: TTS
+  // VOICE: TTS (ElevenLabs)
   // ──────────────────────────
-  async function speakMessage(id: string, text: string) {
+  async function speakMessage(
+    id: string,
+    text: string,
+    opts?: { onEnded?: () => void }
+  ) {
     if (!text.trim()) return;
 
     try {
@@ -349,9 +398,7 @@ export default function Page() {
         body: JSON.stringify({ text }),
       });
 
-      if (!res.ok) {
-        throw new Error("Voice request failed");
-      }
+      if (!res.ok) throw new Error("Voice request failed");
 
       const arrayBuf = await res.arrayBuffer();
       const blob = new Blob([arrayBuf], { type: "audio/mpeg" });
@@ -363,6 +410,9 @@ export default function Page() {
       audio.onended = () => {
         setSpeakingId(current => (current === id ? null : current));
         URL.revokeObjectURL(url);
+        if (opts?.onEnded) {
+          opts.onEnded();
+        }
       };
 
       audio.play().catch(err => {
@@ -376,7 +426,7 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // VOICE: HOLD-TO-TALK
+  // VOICE: HOLD TO TALK (mic → /api/transcribe)
   // ──────────────────────────
   async function startRecording() {
     try {
@@ -430,14 +480,13 @@ export default function Page() {
         body: formData,
       });
 
-      if (!res.ok) {
-        throw new Error("Transcription failed");
-      }
+      if (!res.ok) throw new Error("Transcription failed");
 
       const data = await res.json();
       const text = (data.text as string).trim();
       if (!text) return;
 
+      // Voice-only and voice+text both route through here
       await sendMessage(text, { autoVoice: true });
     } catch (err) {
       console.error("handleAudioBlob error:", err);
@@ -462,7 +511,65 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // SIDEBAR ACTIONS (inline rename)
+  // VOICE SESSION BUTTON (Use voice mode / End)
+  // ──────────────────────────
+  async function handleVoiceButtonClick() {
+    // If already in voice mode → end it
+    if (voiceSession) {
+      setVoiceSession(false);
+
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
+
+      if (isRecording) {
+        stopRecording();
+      }
+
+      return;
+    }
+
+    // Start voice mode
+    setVoiceSession(true);
+
+    try {
+      await ensureConversation();
+
+      const greeting =
+        "What brings you here? Are you exploring what's broken about current systems, curious about alternatives, or working through a specific question?";
+
+      const id = crypto.randomUUID();
+      const greetingMsg: Message = {
+        id,
+        role: "assistant",
+        content: greeting,
+      };
+
+      // Show intro only in voice + text mode
+      if (voiceModeType === "voice_text") {
+        setMessages(prev => [...prev, greetingMsg]);
+      }
+
+      // Speak intro in both modes, and auto-start listening in voice-only
+      await speakMessage(id, greeting, {
+        onEnded: () => {
+          if (voiceModeType === "voice_only" && voiceSession && !isRecording) {
+            startRecording().catch(err =>
+              console.error("startRecording after greeting failed:", err)
+            );
+          }
+        },
+      });
+    } catch (err) {
+      console.error("Error starting voice session:", err);
+      setVoiceSession(false);
+    }
+  }
+
+  // ──────────────────────────
+  // SIDEBAR ACTIONS
   // ──────────────────────────
   function handleNewChat() {
     setActiveConversationId(null);
@@ -470,11 +577,15 @@ export default function Page() {
     setInput("");
     setEditingConversationId(null);
     setEditingTitle("");
+    setOpenMenuId(null);
+    setVoiceSession(false);
   }
 
   async function handleSelectConversation(id: string) {
     setActiveConversationId(id);
     setEditingConversationId(null);
+    setOpenMenuId(null);
+    setVoiceSession(false);
     await loadMessages(id);
   }
 
@@ -512,6 +623,10 @@ export default function Page() {
         setEditingConversationId(null);
         setEditingTitle("");
       }
+
+      if (openMenuId === id) {
+        setOpenMenuId(null);
+      }
     } catch (err) {
       console.error("handleDeleteConversation error:", err);
     }
@@ -520,6 +635,7 @@ export default function Page() {
   function startEditingConversation(conv: ConversationSummary) {
     setEditingConversationId(conv.id);
     setEditingTitle(conv.title || "Untitled conversation");
+    setOpenMenuId(null);
   }
 
   async function commitConversationTitle() {
@@ -571,10 +687,8 @@ export default function Page() {
     setEditingTitle("");
   }
 
-  const hasMessages = messages.length > 0;
-
   // ──────────────────────────
-  // AUTH GATE UI
+  // AUTH SCREENS
   // ──────────────────────────
   if (authLoading) {
     return (
@@ -595,7 +709,7 @@ export default function Page() {
               <h1 className="text-lg font-semibold tracking-tight">
                 Adam AI · Access
               </h1>
-              <p className="text-[11px] text-slate-400 mt-1">
+              <p className="mt-1 text-[11px] text-slate-400">
                 Sign in to keep your conversations and insights in one place.
               </p>
             </div>
@@ -660,123 +774,212 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // MAIN APP UI (AUTHED)
+  // MAIN LIGHT / DARK UI
   // ──────────────────────────
+  const renderVoiceModeSelector = () => (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        onClick={handleVoiceButtonClick}
+        className={`flex h-8 items-center justify-center gap-1 rounded-full border px-3 text-[11px] font-medium transition ${
+          voiceSession
+            ? "border-[#001f3e] bg-[#001f3e] text-[#f2fdff] dark:bg-[#b9a8fe] dark:border-[#b9a8fe] dark:text-[#212121]"
+            : "border-[#c7d0f0] bg-[#eaeffb] text-[#001f3e] hover:bg-[#d8e0f7] dark:bg-transparent dark:border-[#b9a8fe] dark:text-[#b9a8fe]"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4 text-[#b9a8fe]">
+          <line
+            x1="6"
+            y1="18"
+            x2="6"
+            y2="10"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          />
+          <line
+            x1="12"
+            y1="18"
+            x2="12"
+            y2="6"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          />
+          <line
+            x1="18"
+            y1="18"
+            x2="18"
+            y2="12"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          />
+        </svg>
+        <span>{voiceSession ? "End" : "Use voice mode"}</span>
+        {/* Chevron to toggle dropdown without triggering voice */}
+        <span
+          className="ml-1 text-[10px] opacity-80 cursor-pointer"
+          onClick={e => {
+            e.stopPropagation();
+            setVoiceModeMenuOpen(prev => !prev);
+          }}
+        >
+          ▼
+        </span>
+      </button>
+
+      {voiceModeMenuOpen && (
+        <div className="absolute bottom-10 right-0 z-30 w-40 rounded-xl border border-[#c7d0f0] bg-white shadow-md text-[11px] text-slate-700 dark:bg-[#181818] dark:border-[#333] dark:text-slate-200">
+          <button
+            type="button"
+            className={`flex w-full items-center justify-between px-3 py-2 hover:bg-[#f2fdff] dark:hover:bg-[#262626] ${
+              voiceModeType === "voice_text" ? "font-semibold" : ""
+            }`}
+            onClick={() => {
+              setVoiceModeType("voice_text");
+              setVoiceModeMenuOpen(false);
+            }}
+          >
+            <span>Voice + text</span>
+            {voiceModeType === "voice_text" && <span>✓</span>}
+          </button>
+          <button
+            type="button"
+            className={`flex w-full items-center justify-between px-3 py-2 hover:bg-[#f2fdff] dark:hover:bg-[#262626] ${
+              voiceModeType === "voice_only" ? "font-semibold" : ""
+            }`}
+            onClick={() => {
+              setVoiceModeType("voice_only");
+              setVoiceModeMenuOpen(false);
+            }}
+          >
+            <span>Voice only</span>
+            {voiceModeType === "voice_only" && <span>✓</span>}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex h-screen w-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#e9f2ff] text-slate-900 dark:bg-[#212121] dark:text-[#f2fdff]">
       {/* Sidebar */}
-      <aside className="flex h-full w-64 flex-col border-r border-slate-800/70 bg-slate-950/60 px-3 py-4 backdrop-blur-xl">
+      <aside className="fixed left-0 top-0 flex h-screen w-64 flex-col border-r border-[#d5dff5] bg-[linear-gradient(to_top,#b9a8fe,#f2fdff)] px-5 py-6 dark:bg-[#181818] dark:border-[#262626] dark:bg-none">
+        {/* Logo / brand */}
+        <div className="mb-8 flex items-center gap-2 pl-[2px]">
+          <img
+            src="/new-adam-ai-logo.png"
+            alt="Adam AI"
+            className="h-[4.7rem] w-auto block dark:hidden"
+          />
+          <img
+            src="/adam-ai-logo-dark.png"
+            alt="Adam AI dark"
+            className="h-[4.7rem] w-auto hidden dark:block"
+          />
+        </div>
+
+        {/* New chat button */}
         <button
           type="button"
           onClick={handleNewChat}
-          className="mb-4 flex items-center justify-between rounded-2xl border border-slate-700/70 bg-slate-900/80 px-3 py-2 text-xs font-medium text-slate-100 hover:border-sky-500/70 hover:bg-slate-900 shadow-sm"
+          className="mb-6 inline-flex items-center gap-2 text-xs font-medium text-slate-800 hover:text-[#4f46e5] dark:text-[#b9a8fe]"
         >
-          <span className="flex items-center gap-1">
-            <span className="text-base leading-none">＋</span>
-            New conversation
+          <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[#b9a8fe] text-[#b9a8fe] text-base leading-none">
+            +
           </span>
+          <span>New chat</span>
         </button>
 
-        <div className="mb-4 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-[11px]">
-          <div>
-            <div className="flex items-center gap-1">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <span className="text-slate-200">Adam is online</span>
-            </div>
-            <div className="mt-1 text-[10px] text-slate-500">
-              Signed in as{" "}
-              <span className="text-slate-200">
-                {user.email ?? user.id.slice(0, 6)}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300 hover:border-slate-500"
-          >
-            Log out
-          </button>
+        {/* Chats label */}
+        <div className="mb-2 text-[11px] font-semibold tracking-wide text-slate-500 dark:text-slate-300">
+          Chats
         </div>
 
-        <div className="flex-1 space-y-1 overflow-y-auto pr-1">
+        {/* Chats list */}
+        <div className="flex-1 max-h-screen overflow-y-scroll no-scrollbar">
           {conversations.length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-700/60 bg-slate-950/60 px-3 py-3 text-[11px] text-slate-500">
-              No conversations yet. Start a session with voice or text to see
-              them here.
+            <div className="rounded-lg border border-dashed border-[#c7d0f0] bg-white/70 px-3 py-3 text-[11px] text-slate-500 dark:bg-[#212121] dark:border-[#333] dark:text-slate-300">
+              No conversations yet. Start by asking Adam anything.
             </div>
           )}
 
           {conversations.map(conv => {
             const isActive = conv.id === activeConversationId;
             const isEditing = conv.id === editingConversationId;
+            const isMenuOpen = conv.id === openMenuId;
 
             return (
-              <div
-                key={conv.id}
-                className={`flex items-center justify-between rounded-2xl px-2 py-2 text-[11px] transition ${
-                  isActive
-                    ? "bg-slate-100 text-slate-900 shadow-sm"
-                    : "bg-slate-900/40 text-slate-300 hover:bg-slate-900/80"
-                }`}
-              >
-                {isEditing ? (
-                  <input
-                    className="flex-1 rounded-md border border-slate-500 bg-slate-950/90 px-2 py-1 text-[11px] outline-none focus:border-sky-500"
-                    value={editingTitle}
-                    autoFocus
-                    onChange={e => setEditingTitle(e.target.value)}
-                    onBlur={commitConversationTitle}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        commitConversationTitle();
-                      } else if (e.key === "Escape") {
-                        e.preventDefault();
-                        cancelConversationTitleEdit();
-                      }
-                    }}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectConversation(conv.id)}
-                    onDoubleClick={() => startEditingConversation(conv)}
-                    className="flex-1 text-left truncate"
-                    title={conv.title || "Untitled conversation"}
-                  >
-                    <span className="font-medium">
+              <div key={conv.id} className="relative">
+                <div
+                  className={`flex items-center justify-between rounded-full px-3 py-1.5 text-[13px] transition cursor-pointer ${
+                    isActive
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-[#2b2b2b] dark:text-[#f2fdff]"
+                      : "bg-transparent text-slate-700 dark:text-slate-300"
+                  } hover:bg-[#b9a8fe] hover:text-[#001f3e] dark:hover:bg-[#333]`}
+                  onClick={() => handleSelectConversation(conv.id)}
+                >
+                  {isEditing ? (
+                    <input
+                      className="flex-1 rounded-md border border-[#b8c3e8] bg-white px-2 py-1 text-[12px] outline-none focus:border-[#8b5cf6] dark:bg-[#181818] dark:border-[#444] dark:text-[#f2fdff]"
+                      value={editingTitle}
+                      autoFocus
+                      onChange={e => setEditingTitle(e.target.value)}
+                      onBlur={commitConversationTitle}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitConversationTitle();
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          cancelConversationTitleEdit();
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="flex-1 truncate">
                       {conv.title || "Untitled conversation"}
                     </span>
-                  </button>
-                )}
+                  )}
 
-                {!isEditing && (
-                  <div className="ml-2 flex items-center gap-1">
+                  {!isEditing && (
                     <button
                       type="button"
-                      onClick={() => startEditingConversation(conv)}
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                        isActive
-                          ? "text-slate-700 hover:bg-slate-200"
-                          : "text-slate-400 hover:bg-slate-800"
-                      }`}
-                      title="Rename"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setOpenMenuId(isMenuOpen ? null : conv.id);
+                      }}
+                      className="ml-2 rounded-full px-1 text-[18px] leading-none text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300"
+                      title="More"
                     >
-                      ✏️
+                      ⋯
                     </button>
+                  )}
+                </div>
 
+                {isMenuOpen && !isEditing && (
+                  <div className="absolute right-0 top-8 z-20 w-32 rounded-xl border border-[#c7d0f0] bg-white shadow-md text-[11px] text-slate-700 dark:bg-[#181818] dark:border-[#333] dark:text-slate-200">
                     <button
                       type="button"
-                      onClick={e => handleDeleteConversation(e, conv.id)}
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                        isActive
-                          ? "text-red-500 hover:bg-red-100"
-                          : "text-red-400 hover:bg-slate-800"
-                      }`}
-                      title="Delete"
+                      className="flex w-full items-center gap-2 px-3 py-2 hover:bg-[#f2fdff] dark:hover:bg-[#262626]"
+                      onClick={() => startEditingConversation(conv)}
                     >
-                      🗑
+                      <img
+                        src="/icon-pencil.png"
+                        alt="Rename"
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>Rename</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 hover:bg-[#fef2f2] text-rose-600 dark:hover:bg-[#3b1212]"
+                      onClick={e => handleDeleteConversation(e, conv.id)}
+                    >
+                      <img
+                        src="/icon-trash.png"
+                        alt="Delete"
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>Delete</span>
                     </button>
                   </div>
                 )}
@@ -784,192 +987,421 @@ export default function Page() {
             );
           })}
         </div>
-      </aside>
 
-      {/* Main area */}
-      <div className="flex h-full flex-1 flex-col px-6 py-6">
-        <div className="mx-auto flex h-full w-full max-w-4xl flex-col rounded-[32px] border border-slate-700/60 bg-slate-950/70 p-5 shadow-[0_0_80px_rgba(15,23,42,0.8)] backdrop-blur-xl">
-          <header className="mb-4 flex items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-500/15 text-sm font-semibold text-sky-300 border border-sky-500/40">
-                A
-              </div>
-              <div>
-                <h1 className="text-base font-semibold tracking-tight">
-                  Adam AI · Systemic Guide
-                </h1>
-                <p className="text-[11px] text-slate-400">
-                  Ask about money, work, care, and the systems shaping your
-                  life. Adam responds with calm, structural insight.
-                </p>
-              </div>
-            </div>
-
+        {/* User info footer */}
+        <div className="mt-4 border-t border-[#d5dff5] pt-3 text-[11px] text-slate-600 dark:border-[#333] dark:text-slate-300">
+          <div className="font-medium">
+            {user.email ?? `User ${user.id.slice(0, 6)}`}
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
             <button
               type="button"
-              onMouseDown={handleMicDown}
-              onMouseUp={handleMicUp}
-              onMouseLeave={handleMicCancel}
-              onTouchStart={handleMicDown}
-              onTouchEnd={handleMicUp}
-              className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-[11px] shadow-sm transition ${
-                isRecording
-                  ? "border-red-500/70 bg-red-600 text-white shadow-[0_0_25px_rgba(248,113,113,0.7)]"
-                  : "border-sky-500/80 bg-slate-900 text-sky-200 hover:bg-sky-500/10"
-              }`}
+              onClick={handleSignOut}
+              className="underline underline-offset-2 hover:text-slate-700 dark:hover:text-slate-200"
             >
-              <span className="text-base leading-none">
-                {isRecording ? "●" : "🎙"}
-              </span>
-              {isRecording ? "Listening… release to send" : "Hold to talk"}
+              Log out
             </button>
-          </header>
+          </div>
+        </div>
+      </aside>
 
-          {/* Main chat area */}
-          {!hasMessages && !activeConversationId ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-8 py-4">
-              <div className="text-center space-y-2">
-                <p className="text-sm text-slate-200">
-                  Start a conversation with Adam.
-                </p>
-                <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                  Speak or type. Adam will help you see the patterns beneath
-                  your money, work, and care stories — not just surface tips.
+      {/* Main content area */}
+      <main className="ml-64 flex h-screen min-h-0 flex-1 flex-col">
+        {/* Top bar */}
+        <div className="flex items-center justify-between bg-[#f2fdff] px-10 py-4 dark:bg-[#212121] dark:border-b dark:border-[#333]">
+          <div className="text-sm font-semibold text-slate-700 dark:text-[#f2fdff]">
+            Adam ai <span className="text-xs font-normal">1.0 v</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="relative flex flex-1 min-h-0 flex-col">
+          {isVoiceOnlyActive ? (
+            // VOICE-ONLY SCREEN
+            <div className="flex flex-1 flex-col items-center justify-between px-10 py-10 bg-transparent">
+              <div className="flex flex-1 items-center justify-center">
+                <div className="relative h-72 w-72 md:h-96 md:w-96 rounded-full bg-[radial-gradient(circle_at_center,#9d8be3,transparent_60%)] animate-pulse flex items-center justify-center">
+                  <button className="rounded-full border border-[#001f3e] bg-white/85 px-6 py-2 text-sm text-slate-900 shadow-sm">
+                    {voiceStatusLabel}
+                  </button>
+                </div>
+              </div>
+              <div className="w-full max-w-3xl">
+                <div className="flex items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]">
+                  <div className="flex-1 text-xs text-slate-500 dark:text-slate-300">
+                    {isRecording
+                      ? "Listening…"
+                      : speakingId
+                      ? "Adam is speaking…"
+                      : "Say anything…"}
+                  </div>
+                  {/* Mic – hold to speak */}
+                  <Tooltip text="Hold while speaking">
+                    <button
+                      type="button"
+                      onMouseDown={handleMicDown}
+                      onMouseUp={handleMicUp}
+                      onMouseLeave={handleMicCancel}
+                      onTouchStart={handleMicDown}
+                      onTouchEnd={handleMicUp}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4 text-[#b9a8fe]"
+                      >
+                        <rect
+                          x="9"
+                          y="5"
+                          width="6"
+                          height="10"
+                          rx="3"
+                          ry="3"
+                          stroke="currentColor"
+                          fill="none"
+                          strokeWidth="1.6"
+                        />
+                        <path
+                          d="M5 11a7 7 0 0 0 14 0"
+                          stroke="currentColor"
+                          fill="none"
+                          strokeWidth="1.6"
+                        />
+                        <line
+                          x1="12"
+                          y1="18"
+                          x2="12"
+                          y2="21"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        />
+                        <line
+                          x1="9"
+                          y1="21"
+                          x2="15"
+                          y2="21"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        />
+                      </svg>
+                    </button>
+                  </Tooltip>
+                  {/* End voice mode */}
+                  <button
+                    type="button"
+                    onClick={handleVoiceButtonClick}
+                    className="flex h-8 items-center justify-center rounded-full border border-[#c7d0f0] bg-[#eaeffb] px-3 text-[11px] font-medium text-[#001f3e] dark:bg-transparent dark:border-[#b9a8fe] dark:text-[#b9a8fe]"
+                  >
+                    End
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : !hasMessages && !activeConversationId ? (
+            // HERO STATE
+            <div className="flex flex-1 flex-col items-center justify-center px-10 bg-transparent">
+              <div className="text-center">
+                <h1
+                  className="text-3xl md:text-4xl font-semibold tracking-tight text-[#9d8be3]"
+                  style={{
+                    fontFamily: "Arial, system-ui, -apple-system, sans-serif",
+                  }}
+                >
+                  What would you like to know?
+                </h1>
+                <p
+                  className="mt-4 max-w-xl text-sm text-slate-600 mx-auto dark:text-slate-300"
+                  style={{
+                    fontFamily: "Arial, system-ui, -apple-system, sans-serif",
+                  }}
+                >
+                  Adam AI is a truth-seeking conversational intelligence
+                  designed to help people explore what’s broken about money,
+                  work, and care – and imagine how regenerative systems could
+                  function instead.
                 </p>
               </div>
 
               <button
                 type="button"
-                onMouseDown={handleMicDown}
-                onMouseUp={handleMicUp}
-                onMouseLeave={handleMicCancel}
-                onTouchStart={handleMicDown}
-                onTouchEnd={handleMicUp}
-                className={`relative flex h-24 w-24 items-center justify-center rounded-full border-2 text-2xl transition ${
-                  isRecording
-                    ? "border-red-400 bg-red-600 text-white shadow-[0_0_40px_rgba(248,113,113,0.9)] animate-pulse"
-                    : "border-sky-400 bg-sky-600 text-white shadow-[0_0_40px_rgba(56,189,248,0.9)] hover:scale-[1.02]"
-                }`}
+                onClick={handleVoiceButtonClick}
+                className="mt-4 text-xs underline text-[#b9a8fe]"
               >
-                🎙
-                <span
-                  className={`absolute -inset-3 rounded-full border border-sky-500/40 ${
-                    isRecording ? "animate-ping" : "opacity-0"
-                  }`}
-                />
+                Voice
               </button>
 
-              <div className="h-10 flex items-end gap-1">
-                {Array.from({ length: 16 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-1 rounded-full bg-sky-400/70 ${
-                      isRecording
-                        ? "animate-[pulse_1s_ease-in-out_infinite]"
-                        : "opacity-30"
-                    }`}
-                    style={{
-                      height: `${6 + ((i * 9) % 30)}px`,
-                      animationDelay: `${(i * 70) % 400}ms`,
-                    }}
-                  />
-                ))}
-              </div>
+              {/* Big input pill */}
+              <form
+                onSubmit={handleSubmit}
+                className="mt-10 flex w-full max-w-3xl items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]"
+              >
+                <input
+                  className="flex-1 border-none bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#f2fdff] dark:placeholder-[#b9a8fe]"
+                  placeholder="Ask anything..."
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  style={{
+                    fontFamily: "Arial, system-ui, -apple-system, sans-serif",
+                  }}
+                />
+                {/* Mic – dictation */}
+                <Tooltip text="Hold while speaking">
+                  <button
+                    type="button"
+                    onMouseDown={handleMicDown}
+                    onMouseUp={handleMicUp}
+                    onMouseLeave={handleMicCancel}
+                    onTouchStart={handleMicDown}
+                    onTouchEnd={handleMicUp}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4 text-[#b9a8fe]"
+                    >
+                      <rect
+                        x="9"
+                        y="5"
+                        width="6"
+                        height="10"
+                        rx="3"
+                        ry="3"
+                        stroke="currentColor"
+                        fill="none"
+                        strokeWidth="1.6"
+                      />
+                      <path
+                        d="M5 11a7 7 0 0 0 14 0"
+                        stroke="currentColor"
+                        fill="none"
+                        strokeWidth="1.6"
+                      />
+                      <line
+                        x1="12"
+                        y1="18"
+                        x2="12"
+                        y2="21"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                      />
+                      <line
+                        x1="9"
+                        y1="21"
+                        x2="15"
+                        y2="21"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                      />
+                    </svg>
+                  </button>
+                </Tooltip>
 
-              <div className="text-[11px] text-slate-500">
-                Or type below if you prefer text.
-              </div>
+                {/* Voice mode selector */}
+                {renderVoiceModeSelector()}
+
+                {/* Send */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] disabled:opacity-50 dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4 text-[#b9a8fe]"
+                  >
+                    <path
+                      d="M5 12L19 5L15 19L11 13L5 12Z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </form>
             </div>
           ) : (
-            <div
-              ref={chatContainerRef}
-              className="mb-3 h-0 flex-1 space-y-2 overflow-y-auto rounded-3xl border border-slate-800/80 bg-gradient-to-b from-slate-950/90 via-slate-950/40 to-slate-950/90 p-4 text-sm"
-            >
-              {messages.map(m => {
-                const isUser = m.role === "user";
-                return (
-                  <div
-                    key={m.id}
-                    className={`flex ${
-                      isUser ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`flex max-w-[80%] items-start gap-2 ${
-                        isUser ? "flex-row-reverse" : "flex-row"
-                      }`}
-                    >
+            // NORMAL CHAT VIEW (Voice + Text)
+            <div className="flex h-full min-h-0 flex-col">
+              {/* Messages */}
+              <div
+                ref={chatContainerRef}
+                className="flex-1 overflow-y-auto no-scrollbar px-10 py-6 bg-[#f2fdff] dark:bg-[#212121]"
+              >
+                <div className="mx-auto flex max-w-3xl flex-col gap-3">
+                  {messages.map(m => {
+                    const isUser = m.role === "user";
+                    return (
                       <div
-                        className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-medium ${
-                          isUser
-                            ? "bg-sky-500 text-white"
-                            : "bg-slate-800 text-slate-100"
+                        key={m.id}
+                        className={`flex ${
+                          isUser ? "justify-end" : "justify-start"
                         }`}
                       >
-                        {isUser ? "You" : "A"}
-                      </div>
-
-                      <div
-                        className={`rounded-2xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap border ${
-                          isUser
-                            ? "border-sky-500/60 bg-sky-600 text-white shadow-[0_0_22px_rgba(56,189,248,0.5)]"
-                            : "border-slate-700/80 bg-slate-900/90 text-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="flex-1">{m.content}</span>
-
-                          {m.role === "assistant" && m.content && (
-                            <button
-                              type="button"
-                              onClick={() => speakMessage(m.id, m.content)}
-                              className="mt-0.5 text-[10px] text-sky-300 hover:text-sky-100"
-                              title="Play as voice"
+                        {isUser ? (
+                          <div className="max-w-[80%] rounded-2xl bg-white px-4 py-2 text-[15px] leading-relaxed whitespace-pre-wrap shadow-sm border border-[#c7d0f0] text-[#001f3e] dark:bg-transparent dark:border-[#b9a8fe] dark:text-[#f2fdff]">
+                            {m.content}
+                          </div>
+                        ) : (
+                          <div className="max-w-[80%] text-[15px] leading-relaxed text-[#001f3e] dark:text-[#f2fdff]">
+                            <Markdown
+                              components={{
+                                h1: ({ children }) => (
+                                  <p className="font-semibold mb-1">
+                                    {children}
+                                  </p>
+                                ),
+                                h2: ({ children }) => (
+                                  <p className="font-semibold mb-1">
+                                    {children}
+                                  </p>
+                                ),
+                                h3: ({ children }) => (
+                                  <p className="font-semibold mb-1">
+                                    {children}
+                                  </p>
+                                ),
+                                p: ({ children }) => (
+                                  <p className="mb-1">{children}</p>
+                                ),
+                                ol: ({ children }) => (
+                                  <ol className="list-decimal ml-4 mb-1 space-y-0.5">
+                                    {children}
+                                  </ol>
+                                ),
+                                li: ({ children }) => (
+                                  <li className="mb-0.5">{children}</li>
+                                ),
+                                ul: ({ children }) => (
+                                  <ul className="list-disc ml-4 mb-1 space-y-0.5">
+                                    {children}</ul>
+                                ),
+                              }}
                             >
-                              {speakingId === m.id ? "▶︎" : "🔊"}
-                            </button>
-                          )}
-                        </div>
+                              {m.content}
+                            </Markdown>
+
+                            {m.content && (
+                              <button
+                                type="button"
+                                onClick={() => speakMessage(m.id, m.content)}
+                                className="mt-1 text-[11px] text-[#001f3e] underline underline-offset-2 dark:text-[#b9a8fe]"
+                              >
+                                {speakingId === m.id ? "Playing…" : "Voice"}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {loading && (
+                    <div className="flex justify-start">
+                      <div className="rounded-full bg-white px-4 py-1.5 text-[12px] text-slate-600 shadow-sm border border-[#d7e0fa] dark:bg-[#181818] dark:text-slate-200 dark:border-[#333]">
+                        Thinking…
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-300">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
-                    Thinking…
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* Input at bottom */}
+              <form
+                onSubmit={handleSubmit}
+                className="border-t border-[#d5dff5] bg-[#f2fdff] px-10 py-4 dark:bg-[#212121] dark:border-[#333]"
+              >
+                <div className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]">
+                  <input
+                    className="flex-1 border-none bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#f2fdff] dark:placeholder-[#b9a8fe]"
+                    placeholder="Ask Adam about what’s really going on…"
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    style={{
+                      fontFamily: "Arial, system-ui, -apple-system, sans-serif",
+                    }}
+                  />
+                  {/* Mic – dictation */}
+                  <Tooltip text="Hold while speaking">
+                    <button
+                      type="button"
+                      onMouseDown={handleMicDown}
+                      onMouseUp={handleMicUp}
+                      onMouseLeave={handleMicCancel}
+                      onTouchStart={handleMicDown}
+                      onTouchEnd={handleMicUp}
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4 text-[#b9a8fe]"
+                      >
+                        <rect
+                          x="9"
+                          y="5"
+                          width="6"
+                          height="10"
+                          rx="3"
+                          ry="3"
+                          stroke="currentColor"
+                          fill="none"
+                          strokeWidth="1.6"
+                        />
+                        <path
+                          d="M5 11a7 7 0 0 0 14 0"
+                          stroke="currentColor"
+                          fill="none"
+                          strokeWidth="1.6"
+                        />
+                        <line
+                          x1="12"
+                          y1="18"
+                          x2="12"
+                          y2="21"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        />
+                        <line
+                          x1="9"
+                          y1="21"
+                          x2="15"
+                          y2="21"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        />
+                      </svg>
+                    </button>
+                  </Tooltip>
+                  {/* Voice mode selector */}
+                  {renderVoiceModeSelector()}
+                  {/* Send */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] disabled:opacity-50 dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4 text-[#b9a8fe]"
+                    >
+                      <path
+                        d="M5 12L19 5L15 19L11 13L5 12Z"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </form>
             </div>
           )}
-
-          {/* Input bar */}
-          <form
-            onSubmit={handleSubmit}
-            className="mt-2 flex items-end gap-2 rounded-2xl border border-slate-700/80 bg-slate-950/80 px-3 py-2 shadow-inner"
-          >
-            <textarea
-              className="max-h-24 min-h-[36px] flex-1 resize-none rounded-xl bg-transparent px-2 py-1 text-xs text-slate-100 outline-none placeholder:text-slate-500"
-              value={input}
-              placeholder="Ask Adam about how the system really works, not just how to cope with it…"
-              onChange={e => setInput(e.target.value)}
-            />
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center gap-1 rounded-xl border border-sky-500 bg-sky-500 px-3 py-1.5 text-[11px] font-medium text-white shadow-[0_0_24px_rgba(56,189,248,0.6)] hover:bg-sky-400 disabled:opacity-50"
-            >
-              <span>Send</span>
-              <span className="text-xs">↩︎</span>
-            </button>
-          </form>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

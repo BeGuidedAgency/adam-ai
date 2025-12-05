@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
-    "paths": {
-      "@/*": ["./*"]
-    }
+    "target": "es2020",
+    "module": "esnext",
+    "lib": ["es2020", "dom"],
+    "downlevelIteration": true,
+    "moduleResolution": "node"
   }
 }

@@ -6,19 +6,22 @@
   "tailwind": {
     "config": "tailwind.config.js",
     "css": "app/globals.css",
-    "baseColor": "neutral",
-    "cssVariables": true,
-    "prefix": ""
+    "baseColor": "slate",
+    "cssVariables": true
   },
-  "iconLibrary": "lucide",
+  "iconLibrary": "radix",
   "aliases": {
     "components": "@/components",
     "utils": "@/lib/utils",
-    "ui": "@/components/ui",
-    "lib": "@/lib",
-    "hooks": "@/hooks"
+    "ui": "@/components/ui"
   },
   "registries": {
+    "@magicui-pro": {
+      "url": "https://pro.magicui.design/registry/{name}",
+      "headers": {
+        "Authorization": "Bearer ${MAGICUI_PRO_REGISTRY_TOKEN}"
+      }
+    },
     "@magicui": "https://magicui.design/r/{name}.json"
   }
 }
