@@ -19,6 +19,7 @@ export const AnimatedThemeToggler = ({
   const [isDark, setIsDark] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
+  // Keep local state in sync with the current document theme
   useEffect(() => {
     const updateTheme = () => {
       setIsDark(document.documentElement.classList.contains("dark"))
@@ -35,53 +36,54 @@ export const AnimatedThemeToggler = ({
     return () => observer.disconnect()
   }, [])
 
-  const toggleTheme = useCallback(async () => {
-    if (!buttonRef.current) return
+  const toggleTheme = useCallback(
+    async () => {
+      if (!buttonRef.current) return
 
-    if (!buttonRef.current) return
+      const doc = document as any
 
-const doc = document as any
-
-const toggleTheme = () => {
-  const newTheme = !isDark
-  setIsDark(newTheme)
-  document.documentElement.classList.toggle("dark")
-  localStorage.setItem("theme", newTheme ? "dark" : "light")
-}
-
-if (typeof doc.startViewTransition === "function") {
-  await doc.startViewTransition(() => {
-    flushSync(toggleTheme)
-  })
-} else {
-  // Fallback for browsers without View Transitions API
-  flushSync(toggleTheme)
-}
-
-
-    const { top, left, width, height } =
-      buttonRef.current.getBoundingClientRect()
-    const x = left + width / 2
-    const y = top + height / 2
-    const maxRadius = Math.hypot(
-      Math.max(left, window.innerWidth - left),
-      Math.max(top, window.innerHeight - top)
-    )
-
-    document.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${maxRadius}px at ${x}px ${y}px)`,
-        ],
-      },
-      {
-        duration,
-        easing: "ease-in-out",
-        pseudoElement: "::view-transition-new(root)",
+      const applyThemeChange = () => {
+        const newTheme = !isDark
+        setIsDark(newTheme)
+        document.documentElement.classList.toggle("dark")
+        localStorage.setItem("theme", newTheme ? "dark" : "light")
       }
-    )
-  }, [isDark, duration])
+
+      // Use View Transitions API if available, otherwise just flip the theme
+      if (typeof doc.startViewTransition === "function") {
+        await doc.startViewTransition(() => {
+          flushSync(applyThemeChange)
+        })
+      } else {
+        flushSync(applyThemeChange)
+      }
+
+      // Existing ripple / circle animation
+      const { top, left, width, height } =
+        buttonRef.current.getBoundingClientRect()
+      const x = left + width / 2
+      const y = top + height / 2
+      const maxRadius = Math.hypot(
+        Math.max(left, window.innerWidth - left),
+        Math.max(top, window.innerHeight - top)
+      )
+
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${maxRadius}px at ${x}px ${y}px)`,
+          ],
+        },
+        {
+          duration,
+          easing: "ease-in-out",
+          pseudoElement: "::view-transition-new(root)",
+        }
+      )
+    },
+    [isDark, duration]
+  )
 
   return (
     <button
