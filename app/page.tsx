@@ -61,6 +61,73 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ===============================
+// LOGIN ORB + GREETING
+// ===============================
+function LoginOrbWithGreeting() {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [played, setPlayed] = useState(false);
+
+  useEffect(() => {
+    if (played) return;
+
+    let cancelled = false;
+
+    async function playGreeting() {
+      try {
+        const text =
+          "Hello, I am Adam AI, a truth-seeking conversational intelligence designed to help you explore what’s broken about money, work, and care, so we can rebuild a new world together.";
+
+        const res = await fetch("/api/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+
+        if (!res.ok) {
+          console.error("Greeting TTS failed", res.status);
+          return;
+        }
+
+        const buf = await res.arrayBuffer();
+        const blob = new Blob([buf], { type: "audio/mpeg" });
+        const url = URL.createObjectURL(blob);
+
+        if (cancelled) return;
+
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.play().catch(err => {
+          console.error("Greeting audio play error:", err);
+        });
+      } catch (err) {
+        console.error("Greeting error:", err);
+      } finally {
+        setPlayed(true);
+      }
+    }
+
+    playGreeting();
+
+    return () => {
+      cancelled = true;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, [played]);
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <VoiceBubble status="idle" label="ADAM AI" />
+      <p className="mt-2 text-[11px] tracking-[0.22em] text-slate-200/80">
+        TRUTH-SEEKING INTELLIGENCE
+      </p>
+    </div>
+  );
+}
+
+// ===============================
 // MAIN PAGE COMPONENT
 // ===============================
 export default function Page() {
@@ -202,6 +269,28 @@ export default function Page() {
     } catch (err) {
       console.error("Sign-up error:", err);
       setAuthError("Failed to sign up");
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo:
+            typeof window !== "undefined"
+              ? window.location.origin
+              : undefined,
+        },
+      });
+
+      if (error) {
+        console.error("Google sign-in error:", error);
+        setAuthError(error.message);
+      }
+    } catch (err) {
+      console.error("Google sign-in fatal error:", err);
+      setAuthError("Failed to sign in with Google");
     }
   }
 
@@ -721,71 +810,115 @@ export default function Page() {
 
   if (!user) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
-        <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-slate-800/70 bg-slate-900/80 px-6 py-6 shadow-[0_0_80px_rgba(56,189,248,0.25)] backdrop-blur-xl">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">
-                Adam AI · Access
+      <div className="relative flex min-h-screen w-screen items-center justify-center overflow-hidden bg-[#020014] text-slate-50">
+        {/* Background glow */}
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_#4f46e5_0,_#020014_55%,_#000_100%)] opacity-80" />
+
+        {/* Theme toggle */}
+        <div className="absolute right-6 top-4 z-20">
+          <ThemeToggle />
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-10 px-4 pb-10 pt-6">
+          {/* Orb + voice greeting */}
+          <LoginOrbWithGreeting />
+
+          {/* Glassmorphism auth card */}
+          <div className="w-full max-w-xl rounded-3xl border border-white/12 bg-white/5 px-8 py-7 shadow-[0_0_60px_rgba(99,102,241,0.7)] backdrop-blur-2xl">
+            <div className="mb-5 text-center">
+              <h1 className="text-lg font-semibold tracking-[0.22em] text-slate-100">
+                ADAM AI · ACCESS
               </h1>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Sign in to keep your conversations and insights in one place.
+              <p className="mt-2 text-[11px] text-slate-300/80">
+                Sign in to keep your conversations and systemic insights in one
+                place.
               </p>
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-500/10 text-xs text-sky-300 border border-sky-500/30">
-              A
-            </div>
-          </div>
 
-          <form className="space-y-3" onSubmit={handleSignIn}>
-            <div className="space-y-1">
-              <label className="text-[11px] text-slate-400">Email</label>
-              <input
-                type="email"
-                className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs outline-none focus:border-sky-500"
-                value={authEmail}
-                onChange={e => setAuthEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] text-slate-400">Password</label>
-              <input
-                type="password"
-                className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs outline-none focus:border-sky-500"
-                value={authPassword}
-                onChange={e => setAuthPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-            </div>
-
-            {authError && (
-              <div className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-200">
-                {authError}
+            <form className="space-y-3" onSubmit={handleSignIn}>
+              <div className="space-y-1">
+                <label className="text-[11px] text-slate-300/80">Email</label>
+                <input
+                  type="email"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-50 outline-none backdrop-blur placeholder:text-slate-400 focus:border-[#9d8be3]"
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                  placeholder="you@example.com"
+                />
               </div>
-            )}
 
-            <div className="flex items-center justify-between gap-2 pt-2">
+              <div className="space-y-1">
+                <label className="text-[11px] text-slate-300/80">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-50 outline-none backdrop-blur placeholder:text-slate-400 focus:border-[#9d8be3]"
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {authError && (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">
+                  {authError}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="flex-1 rounded-xl border border-sky-500 bg-sky-500 px-3 py-2 text-xs font-medium text-white shadow-[0_0_20px_rgba(56,189,248,0.5)] hover:bg-sky-400"
+                className="mt-2 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#9d8be3] to-[#4f46e5] px-4 py-2 text-xs font-semibold tracking-[0.16em] text-white shadow-[0_0_30px_rgba(157,139,227,0.8)] hover:from-[#b9a8fe] hover:to-[#6366f1]"
               >
-                Sign in
+                LOGIN
               </button>
-              <button
-                type="button"
-                onClick={handleSignUp}
-                className="flex-1 rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-100 hover:border-slate-500"
-              >
-                Create account
-              </button>
-            </div>
-          </form>
 
-          <div className="mt-4 border-t border-slate-800 pt-3 text-[10px] text-slate-500">
-            Adam helps you explore money, work and care as systems – not just
-            personal problems.
+              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-300/80">
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-slate-100"
+                  onClick={() =>
+                    alert("Password reset flow to be implemented.")
+                  }
+                >
+                  Forgot password?
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSignUp}
+                  className="underline underline-offset-2 hover:text-slate-100"
+                >
+                  Sign up
+                </button>
+              </div>
+            </form>
+
+            {/* Divider */}
+            <div className="my-4 flex items-center gap-3 text-[10px] text-slate-500">
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-500/60 to-transparent" />
+              <span>OR LOGIN WITH</span>
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-500/60 to-transparent" />
+            </div>
+
+            {/* Google */}
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-slate-50 backdrop-blur hover:bg-white/10"
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white">
+                <span className="text-[16px] font-bold bg-clip-text text-transparent bg-gradient-to-br from-[#4285F4] via-[#EA4335] to-[#FBBC05]">
+                  G
+                </span>
+              </span>
+              <span>Continue with Google</span>
+            </button>
+          </div>
+
+          <div className="text-[10px] text-slate-500/80">
+            Adam AI is a truth-seeking conversational intelligence for money,
+            work and care.
           </div>
         </div>
       </div>
@@ -833,9 +966,8 @@ export default function Page() {
           />
         </svg>
         <span>{voiceSession ? "End" : "Use voice mode"}</span>
-        {/* Chevron to toggle dropdown without triggering voice */}
         <span
-          className="ml-1 text-[10px] opacity-80 cursor-pointer"
+          className="ml-1 cursor-pointer text-[10px] opacity-80"
           onClick={e => {
             e.stopPropagation();
             setVoiceModeMenuOpen(prev => !prev);
@@ -846,7 +978,7 @@ export default function Page() {
       </button>
 
       {voiceModeMenuOpen && (
-        <div className="absolute bottom-10 right-0 z-30 w-40 rounded-xl border border-[#c7d0f0] bg-white shadow-md text-[11px] text-slate-700 dark:bg-[#181818] dark:border-[#333] dark:text-slate-200">
+        <div className="absolute bottom-10 right-0 z-30 w-40 rounded-xl border border-[#c7d0f0] bg-white text-[11px] text-slate-700 shadow-md dark:border-[#333] dark:bg-[#181818] dark:text-slate-200">
           <button
             type="button"
             className={`flex w-full items-center justify-between px-3 py-2 hover:bg-[#f2fdff] dark:hover:bg-[#262626] ${
@@ -881,18 +1013,18 @@ export default function Page() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#e9f2ff] text-slate-900 dark:bg-[#212121] dark:text-[#f2fdff]">
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 flex h-screen w-64 flex-col border-r border-[#d5dff5] bg-[linear-gradient(to_top,#b9a8fe,#f2fdff)] px-5 py-6 dark:bg-[#181818] dark:border-[#262626] dark:bg-none">
+      <aside className="fixed left-0 top-0 flex h-screen w-64 flex-col border-r border-[#d5dff5] bg-[linear-gradient(to_top,#b9a8fe,#f2fdff)] px-5 py-6 dark:border-[#262626] dark:bg-[#181818] dark:bg-none">
         {/* Logo / brand */}
         <div className="mb-8 flex items-center gap-2 pl-[2px]">
           <img
             src="/new-adam-ai-logo.png"
             alt="Adam AI"
-            className="h-[4.7rem] w-auto block dark:hidden"
+            className="block h-[4.7rem] w-auto dark:hidden"
           />
           <img
             src="/adam-ai-logo-dark.png"
             alt="Adam AI dark"
-            className="h-[4.7rem] w-auto hidden dark:block"
+            className="hidden h-[4.7rem] w-auto dark:block"
           />
         </div>
 
@@ -902,7 +1034,7 @@ export default function Page() {
           onClick={handleNewChat}
           className="mb-6 inline-flex items-center gap-2 text-xs font-medium text-slate-800 hover:text-[#4f46e5] dark:text-[#b9a8fe]"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[#b9a8fe] text-[#b9a8fe] text-base leading-none">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[#b9a8fe] text-base leading-none text-[#b9a8fe]">
             +
           </span>
           <span>New chat</span>
@@ -914,9 +1046,9 @@ export default function Page() {
         </div>
 
         {/* Chats list */}
-        <div className="flex-1 max-h-screen overflow-y-scroll no-scrollbar">
+        <div className="no-scrollbar flex-1 max-h-screen overflow-y-scroll">
           {conversations.length === 0 && (
-            <div className="rounded-lg border border-dashed border-[#c7d0f0] bg-white/70 px-3 py-3 text-[11px] text-slate-500 dark:bg-[#212121] dark:border-[#333] dark:text-slate-300">
+            <div className="rounded-lg border border-dashed border-[#c7d0f0] bg-white/70 px-3 py-3 text-[11px] text-slate-500 dark:border-[#333] dark:bg-[#212121] dark:text-slate-300">
               No conversations yet. Start by asking Adam anything.
             </div>
           )}
@@ -929,7 +1061,7 @@ export default function Page() {
             return (
               <div key={conv.id} className="relative">
                 <div
-                  className={`flex items-center justify-between rounded-full px-3 py-1.5 text-[13px] transition cursor-pointer ${
+                  className={`flex cursor-pointer items-center justify-between rounded-full px-3 py-1.5 text-[13px] transition ${
                     isActive
                       ? "bg-white text-slate-900 shadow-sm dark:bg-[#2b2b2b] dark:text-[#f2fdff]"
                       : "bg-transparent text-slate-700 dark:text-slate-300"
@@ -938,7 +1070,7 @@ export default function Page() {
                 >
                   {isEditing ? (
                     <input
-                      className="flex-1 rounded-md border border-[#b8c3e8] bg-white px-2 py-1 text-[12px] outline-none focus:border-[#8b5cf6] dark:bg-[#181818] dark:border-[#444] dark:text-[#f2fdff]"
+                      className="flex-1 rounded-md border border-[#b8c3e8] bg-white px-2 py-1 text-[12px] outline-none focus:border-[#8b5cf6] dark:border-[#444] dark:bg-[#181818] dark:text-[#f2fdff]"
                       value={editingTitle}
                       autoFocus
                       onChange={e => setEditingTitle(e.target.value)}
@@ -975,7 +1107,7 @@ export default function Page() {
                 </div>
 
                 {isMenuOpen && !isEditing && (
-                  <div className="absolute right-0 top-8 z-20 w-32 rounded-xl border border-[#c7d0f0] bg-white shadow-md text-[11px] text-slate-700 dark:bg-[#181818] dark:border-[#333] dark:text-slate-200">
+                  <div className="absolute right-0 top-8 z-20 w-32 rounded-xl border border-[#c7d0f0] bg-white text-[11px] text-slate-700 shadow-md dark:border-[#333] dark:bg-[#181818] dark:text-slate-200">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2 hover:bg-[#f2fdff] dark:hover:bg-[#262626]"
@@ -990,7 +1122,7 @@ export default function Page() {
                     </button>
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 hover:bg-[#fef2f2] text-rose-600 dark:hover:bg-[#3b1212]"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-rose-600 hover:bg-[#fef2f2] dark:hover:bg-[#3b1212]"
                       onClick={e => handleDeleteConversation(e, conv.id)}
                     >
                       <img
@@ -1027,7 +1159,7 @@ export default function Page() {
       {/* Main content area */}
       <main className="ml-64 flex h-screen min-h-0 flex-1 flex-col">
         {/* Top bar */}
-        <div className="flex items-center justify-between bg-[#f2fdff] px-10 py-4 dark:bg-[#212121] dark:border-b dark:border-[#333]">
+        <div className="flex items-center justify-between bg-[#f2fdff] px-10 py-4 dark:border-b dark:border-[#333] dark:bg-[#212121]">
           <div className="text-sm font-semibold text-slate-700 dark:text-[#f2fdff]">
             Adam ai <span className="text-xs font-normal">1.0 v</span>
           </div>
@@ -1037,17 +1169,17 @@ export default function Page() {
         </div>
 
         {/* Content */}
-        <div className="relative flex flex-1 min-h-0 flex-col">
+        <div className="relative flex min-h-0 flex-1 flex-col">
           {isVoiceOnlyActive ? (
             // VOICE-ONLY SCREEN
-            <div className="flex flex-1 flex-col items-center justify-between px-10 py-10 bg-transparent">
+            <div className="flex flex-1 flex-col items-center justify-between bg-transparent px-10 py-10">
               <div className="flex flex-1 items-center justify-center">
                 <VoiceBubble status={voiceStatus} label={voiceStatusLabel} />
               </div>
 
               {/* Bottom mic bar + End button */}
               <div className="w-full max-w-3xl">
-                <div className="flex items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]">
+                <div className="flex items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:border-[#b9a8fe] dark:bg-transparent">
                   <div className="flex-1 text-xs text-slate-500 dark:text-slate-300">
                     {isRecording
                       ? "Listening…"
@@ -1064,7 +1196,7 @@ export default function Page() {
                       onMouseLeave={handleMicCancel}
                       onTouchStart={handleMicDown}
                       onTouchEnd={handleMicUp}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:border dark:border-[#b9a8fe] dark:bg-transparent"
                     >
                       <svg
                         viewBox="0 0 24 24"
@@ -1110,7 +1242,7 @@ export default function Page() {
                   <button
                     type="button"
                     onClick={handleVoiceButtonClick}
-                    className="flex h-8 items-center justify-center rounded-full border border-[#c7d0f0] bg-[#eaeffb] px-3 text-[11px] font-medium text-[#001f3e] dark:bg-transparent dark:border-[#b9a8fe] dark:text-[#b9a8fe]"
+                    className="flex h-8 items-center justify-center rounded-full border border-[#c7d0f0] bg-[#eaeffb] px-3 text-[11px] font-medium text-[#001f3e] dark:border-[#b9a8fe] dark:bg-transparent dark:text-[#b9a8fe]"
                   >
                     End
                   </button>
@@ -1119,10 +1251,10 @@ export default function Page() {
             </div>
           ) : !hasMessages && !activeConversationId ? (
             // HERO STATE
-            <div className="flex flex-1 flex-col items-center justify-center px-10 bg-transparent">
+            <div className="flex flex-1 flex-col items-center justify-center bg-transparent px-10">
               <div className="text-center">
                 <h1
-                  className="text-3xl md:text-4xl font-semibold tracking-tight text-[#9d8be3]"
+                  className="text-3xl font-semibold tracking-tight text-[#9d8be3] md:text-4xl"
                   style={{
                     fontFamily: "Arial, system-ui, -apple-system, sans-serif",
                   }}
@@ -1130,7 +1262,7 @@ export default function Page() {
                   What would you like to know?
                 </h1>
                 <p
-                  className="mt-4 max-w-xl text-sm text-slate-600 mx-auto dark:text-slate-300"
+                  className="mx-auto mt-4 max-w-xl text-sm text-slate-600 dark:text-slate-300"
                   style={{
                     fontFamily: "Arial, system-ui, -apple-system, sans-serif",
                   }}
@@ -1153,7 +1285,7 @@ export default function Page() {
               {/* Big input pill */}
               <form
                 onSubmit={handleSubmit}
-                className="mt-10 flex w-full max-w-3xl items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]"
+                className="mt-10 flex w-full max-w-3xl items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:border-[#b9a8fe] dark:bg-transparent"
               >
                 <input
                   className="flex-1 border-none bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#f2fdff] dark:placeholder-[#b9a8fe]"
@@ -1173,7 +1305,7 @@ export default function Page() {
                     onMouseLeave={handleMicCancel}
                     onTouchStart={handleMicDown}
                     onTouchEnd={handleMicUp}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:border dark:border-[#b9a8fe] dark:bg-transparent"
                   >
                     <svg
                       viewBox="0 0 24 24"
@@ -1223,7 +1355,7 @@ export default function Page() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] disabled:opacity-50 dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] disabled:opacity-50 dark:border dark:border-[#b9a8fe] dark:bg-transparent"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -1246,7 +1378,7 @@ export default function Page() {
               {/* Messages */}
               <div
                 ref={chatContainerRef}
-                className="flex-1 overflow-y-auto no-scrollbar px-10 py-6 bg-[#f2fdff] dark:bg-[#212121]"
+                className="no-scrollbar flex-1 overflow-y-auto bg-[#f2fdff] px-10 py-6 dark:bg-[#212121]"
               >
                 <div className="mx-auto flex max-w-3xl flex-col gap-3">
                   {messages.map(m => {
@@ -1259,7 +1391,7 @@ export default function Page() {
                         }`}
                       >
                         {isUser ? (
-                          <div className="max-w-[80%] rounded-2xl bg-white px-4 py-2 text-[15px] leading-relaxed whitespace-pre-wrap shadow-sm border border-[#c7d0f0] text-[#001f3e] dark:bg-transparent dark:border-[#b9a8fe] dark:text-[#f2fdff]">
+                          <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl border border-[#c7d0f0] bg-white px-4 py-2 text-[15px] leading-relaxed text-[#001f3e] shadow-sm dark:border-[#b9a8fe] dark:bg-transparent dark:text-[#f2fdff]">
                             {m.content}
                           </div>
                         ) : (
@@ -1267,17 +1399,17 @@ export default function Page() {
                             <Markdown
                               components={{
                                 h1: ({ children }) => (
-                                  <p className="font-semibold mb-1">
+                                  <p className="mb-1 font-semibold">
                                     {children}
                                   </p>
                                 ),
                                 h2: ({ children }) => (
-                                  <p className="font-semibold mb-1">
+                                  <p className="mb-1 font-semibold">
                                     {children}
                                   </p>
                                 ),
                                 h3: ({ children }) => (
-                                  <p className="font-semibold mb-1">
+                                  <p className="mb-1 font-semibold">
                                     {children}
                                   </p>
                                 ),
@@ -1285,7 +1417,7 @@ export default function Page() {
                                   <p className="mb-1">{children}</p>
                                 ),
                                 ol: ({ children }) => (
-                                  <ol className="list-decimal ml-4 mb-1 space-y-0.5">
+                                  <ol className="mb-1 ml-4 list-decimal space-y-0.5">
                                     {children}
                                   </ol>
                                 ),
@@ -1293,7 +1425,7 @@ export default function Page() {
                                   <li className="mb-0.5">{children}</li>
                                 ),
                                 ul: ({ children }) => (
-                                  <ul className="list-disc ml-4 mb-1 space-y-0.5">
+                                  <ul className="mb-1 ml-4 list-disc space-y-0.5">
                                     {children}
                                   </ul>
                                 ),
@@ -1319,7 +1451,7 @@ export default function Page() {
 
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="rounded-full bg-white px-4 py-1.5 text-[12px] text-slate-600 shadow-sm border border-[#d7e0fa] dark:bg-[#181818] dark:text-slate-200 dark:border-[#333]">
+                      <div className="rounded-full border border-[#d7e0fa] bg-white px-4 py-1.5 text-[12px] text-slate-600 shadow-sm dark:border-[#333] dark:bg-[#181818] dark:text-slate-200">
                         Thinking…
                       </div>
                     </div>
@@ -1330,9 +1462,9 @@ export default function Page() {
               {/* Input at bottom */}
               <form
                 onSubmit={handleSubmit}
-                className="border-t border-[#d5dff5] bg-[#f2fdff] px-10 py-4 dark:bg-[#212121] dark:border-[#333]"
+                className="border-t border-[#d5dff5] bg-[#f2fdff] px-10 py-4 dark:border-[#333] dark:bg-[#212121]"
               >
-                <div className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]">
+                <div className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:border-[#b9a8fe] dark:bg-transparent">
                   <input
                     className="flex-1 border-none bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#f2fdff] dark:placeholder-[#b9a8fe]"
                     placeholder="Ask Adam about what’s really going on…"
@@ -1351,7 +1483,7 @@ export default function Page() {
                       onMouseLeave={handleMicCancel}
                       onTouchStart={handleMicDown}
                       onTouchEnd={handleMicUp}
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] dark:border dark:border-[#b9a8fe] dark:bg-transparent"
                     >
                       <svg
                         viewBox="0 0 24 24"
@@ -1399,7 +1531,7 @@ export default function Page() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] disabled:opacity-50 dark:bg-transparent dark:border dark:border-[#b9a8fe]"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaeffb] hover:bg-[#d8e0f7] disabled:opacity-50 dark:border dark:border-[#b9a8fe] dark:bg-transparent"
                   >
                     <svg
                       viewBox="0 0 24 24"
