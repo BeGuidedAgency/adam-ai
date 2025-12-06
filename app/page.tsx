@@ -61,73 +61,6 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ===============================
-// LOGIN ORB + GREETING
-// ===============================
-function LoginOrbWithGreeting() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [played, setPlayed] = useState(false);
-
-  useEffect(() => {
-    if (played) return;
-
-    let cancelled = false;
-
-    async function playGreeting() {
-      try {
-        const text =
-          "Hello, I am Adam AI, a truth-seeking conversational intelligence designed to help you explore what’s broken about money, work, and care, so we can rebuild a new world together.";
-
-        const res = await fetch("/api/voice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-
-        if (!res.ok) {
-          console.error("Greeting TTS failed", res.status);
-          return;
-        }
-
-        const buf = await res.arrayBuffer();
-        const blob = new Blob([buf], { type: "audio/mpeg" });
-        const url = URL.createObjectURL(blob);
-
-        if (cancelled) return;
-
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.play().catch(err => {
-          console.error("Greeting audio play error:", err);
-        });
-      } catch (err) {
-        console.error("Greeting error:", err);
-      } finally {
-        setPlayed(true);
-      }
-    }
-
-    playGreeting();
-
-    return () => {
-      cancelled = true;
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
-  }, [played]);
-
-  return (
-    <div className="flex flex-col items-center gap-4">
-      <VoiceBubble status="idle" label="ADAM AI" />
-      <p className="mt-2 text-[11px] tracking-[0.22em] text-slate-200/80">
-        TRUTH-SEEKING INTELLIGENCE
-      </p>
-    </div>
-  );
-}
-
-// ===============================
 // MAIN PAGE COMPONENT
 // ===============================
 export default function Page() {
@@ -219,7 +152,9 @@ export default function Page() {
     initAuth();
   }, []);
 
-  // load conversations when user changes
+  // ──────────────────────────
+  // LOAD CONVERSATIONS WHEN USER CHANGES
+  // ──────────────────────────
   useEffect(() => {
     if (!user) {
       setConversations([]);
@@ -272,25 +207,23 @@ export default function Page() {
     }
   }
 
-  async function handleGoogleSignIn() {
+  async function handleGoogleLogin() {
+    setAuthError(null);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo:
-            typeof window !== "undefined"
-              ? window.location.origin
-              : undefined,
+            typeof window !== "undefined" ? window.location.origin : undefined,
         },
       });
-
       if (error) {
-        console.error("Google sign-in error:", error);
+        console.error("Google login error:", error.message);
         setAuthError(error.message);
       }
     } catch (err) {
-      console.error("Google sign-in fatal error:", err);
-      setAuthError("Failed to sign in with Google");
+      console.error("Google login error:", err);
+      setAuthError("Failed to start Google sign-in");
     }
   }
 
@@ -483,7 +416,7 @@ export default function Page() {
 
   // ──────────────────────────
   // VOICE: TTS (ElevenLabs)
-  // ──────────────────────────
+// ──────────────────────────
   async function speakMessage(
     id: string,
     text: string,
@@ -809,85 +742,96 @@ export default function Page() {
   }
 
   if (!user) {
+    // NEW BACKGROUND IMAGE + GLASS LOGIN
     return (
-      <div className="relative flex min-h-screen w-screen items-center justify-center overflow-hidden bg-[#020014] text-slate-50">
-        {/* Background glow */}
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_#4f46e5_0,_#020014_55%,_#000_100%)] opacity-80" />
+      <div className="relative flex min-h-screen w-screen items-center justify-center overflow-hidden bg-black text-white">
+        {/* Background image */}
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "url('/adaim.ai.login.page.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+        {/* Slight dark overlay for contrast */}
+        <div className="absolute inset-0 bg-black/35" />
 
         {/* Theme toggle */}
-        <div className="absolute right-6 top-4 z-20">
+        <div className="absolute right-6 top-6 z-20">
           <ThemeToggle />
         </div>
 
-        {/* Content */}
-        <div className="relative z-10 flex w-full max-w-3xl flex-col items-center gap-10 px-4 pb-10 pt-6">
-          {/* Orb + voice greeting */}
-          <LoginOrbWithGreeting />
-
-          {/* Glassmorphism auth card */}
-          <div className="w-full max-w-xl rounded-3xl border border-white/12 bg-white/5 px-8 py-7 shadow-[0_0_60px_rgba(99,102,241,0.7)] backdrop-blur-2xl">
-            <div className="mb-5 text-center">
-              <h1 className="text-lg font-semibold tracking-[0.22em] text-slate-100">
+        {/* Glass card */}
+        <div className="relative z-10 flex w-full max-w-5xl justify-center px-4">
+          <div className="w-full max-w-3xl rounded-[40px] border border-white/12 bg-white/10 px-10 py-10 text-sm text-white shadow-[0_40px_120px_rgba(0,0,0,0.85)] backdrop-blur-2xl md:px-14 md:py-12">
+            {/* Header */}
+            <div className="mb-8 text-center">
+              <div className="text-xs tracking-[0.4em] text-white/75">
                 ADAM AI · ACCESS
-              </h1>
-              <p className="mt-2 text-[11px] text-slate-300/80">
-                Sign in to keep your conversations and systemic insights in one
-                place.
+              </div>
+              <p className="mt-2 text-[11px] text-white/65">
+                Sign in to keep your conversations and systemic insights in one place.
               </p>
             </div>
 
-            <form className="space-y-3" onSubmit={handleSignIn}>
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-300/80">Email</label>
-                <input
-                  type="email"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-50 outline-none backdrop-blur placeholder:text-slate-400 focus:border-[#9d8be3]"
-                  value={authEmail}
-                  onChange={e => setAuthEmail(e.target.value)}
-                  placeholder="you@example.com"
-                />
+            {/* Form */}
+            <form className="space-y-5" onSubmit={handleSignIn}>
+              {/* Email */}
+              <div className="space-y-1 text-left">
+                <label className="text-[11px] text-white/80">Email</label>
+                <div className="rounded-full bg-white/14 px-4 py-3 shadow-inner shadow-black/40 ring-1 ring-white/20">
+                  <input
+                    type="email"
+                    className="w-full bg-transparent text-[12px] text-white outline-none placeholder:text-white/55"
+                    value={authEmail}
+                    onChange={e => setAuthEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-300/80">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-50 outline-none backdrop-blur placeholder:text-slate-400 focus:border-[#9d8be3]"
-                  value={authPassword}
-                  onChange={e => setAuthPassword(e.target.value)}
-                  placeholder="••••••••"
-                />
+              {/* Password */}
+              <div className="space-y-1 text-left">
+                <label className="text-[11px] text-white/80">Password</label>
+                <div className="rounded-full bg-white/14 px-4 py-3 shadow-inner shadow-black/40 ring-1 ring-white/20">
+                  <input
+                    type="password"
+                    className="w-full bg-transparent text-[12px] text-white outline-none placeholder:text-white/55"
+                    value={authPassword}
+                    onChange={e => setAuthPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
               </div>
 
+              {/* Error */}
               {authError && (
-                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">
+                <div className="rounded-xl border border-rose-400/60 bg-rose-500/25 px-3 py-2 text-[11px] text-rose-50">
                   {authError}
                 </div>
               )}
 
+              {/* Login button */}
               <button
                 type="submit"
-                className="mt-2 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#9d8be3] to-[#4f46e5] px-4 py-2 text-xs font-semibold tracking-[0.16em] text-white shadow-[0_0_30px_rgba(157,139,227,0.8)] hover:from-[#b9a8fe] hover:to-[#6366f1]"
+                className="mt-2 flex h-10 w-full items-center justify-center rounded-full bg-gradient-to-r from-[#da5bff] via-[#a66bff] to-[#5b7dff] text-[11px] font-semibold tracking-[0.22em] text-white shadow-[0_18px_55px_rgba(0,0,0,0.85)] hover:brightness-110"
               >
                 LOGIN
               </button>
 
-              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-300/80">
+              {/* Links */}
+              <div className="mt-2 flex items-center justify-between text-[11px] text-white/75">
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:text-slate-100"
-                  onClick={() =>
-                    alert("Password reset flow to be implemented.")
-                  }
+                  className="underline underline-offset-2 hover:text-white"
                 >
                   Forgot password?
                 </button>
                 <button
                   type="button"
                   onClick={handleSignUp}
-                  className="underline underline-offset-2 hover:text-slate-100"
+                  className="underline underline-offset-2 hover:text-white"
                 >
                   Sign up
                 </button>
@@ -895,30 +839,32 @@ export default function Page() {
             </form>
 
             {/* Divider */}
-            <div className="my-4 flex items-center gap-3 text-[10px] text-slate-500">
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-500/60 to-transparent" />
-              <span>OR LOGIN WITH</span>
-              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-500/60 to-transparent" />
+            <div className="mt-7 flex items-center gap-3 text-[10px] uppercase tracking-[0.24em] text-white/60">
+              <div className="h-px flex-1 bg-white/20" />
+              <span>Or login with</span>
+              <div className="h-px flex-1 bg-white/20" />
             </div>
 
-            {/* Google */}
-            <button
-              type="button"
-              onClick={handleGoogleSignIn}
-              className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-2 text-xs font-medium text-slate-50 backdrop-blur hover:bg-white/10"
-            >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white">
-                <span className="text-[16px] font-bold bg-clip-text text-transparent bg-gradient-to-br from-[#4285F4] via-[#EA4335] to-[#FBBC05]">
-                  G
+            {/* Google login */}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-black/55 text-[12px] font-medium text-white/85 ring-1 ring-white/22 hover:bg-black/75"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                  <span className="text-[13px] font-semibold text-[#db4437]">
+                    G
+                  </span>
                 </span>
-              </span>
-              <span>Continue with Google</span>
-            </button>
-          </div>
+                <span>Continue with Google</span>
+              </button>
+            </div>
 
-          <div className="text-[10px] text-slate-500/80">
-            Adam AI is a truth-seeking conversational intelligence for money,
-            work and care.
+            {/* Footer copy */}
+            <p className="mt-6 text-center text-[10px] text-white/70">
+              Adam AI is a truth-seeking conversational intelligence for money, work, and care.
+            </p>
           </div>
         </div>
       </div>
@@ -926,7 +872,7 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // MAIN LIGHT / DARK UI
+  // MAIN LIGHT / DARK UI (CHAT)
   // ──────────────────────────
   const renderVoiceModeSelector = () => (
     <div className="relative inline-flex">
@@ -1277,7 +1223,7 @@ export default function Page() {
               <button
                 type="button"
                 onClick={handleVoiceButtonClick}
-                className="mt-4 text-xs underline text-[#b9a8fe]"
+                className="mt-4 text-xs text-[#b9a8fe] underline"
               >
                 Voice
               </button>
@@ -1471,7 +1417,8 @@ export default function Page() {
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     style={{
-                      fontFamily: "Arial, system-ui, -apple-system, sans-serif",
+                      fontFamily:
+                        "Arial, system-ui, -apple-system, sans-serif",
                     }}
                   />
                   {/* Mic – dictation */}
