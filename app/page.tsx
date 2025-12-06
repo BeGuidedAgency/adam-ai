@@ -19,7 +19,7 @@ const Tooltip = ({
   children: React.ReactNode;
   text: string;
 }) => (
-  <div className="relative group inline-flex">
+  <div className="relative inline-flex group">
     {children}
     <div
       className="
@@ -152,9 +152,7 @@ export default function Page() {
     initAuth();
   }, []);
 
-  // ──────────────────────────
-  // LOAD CONVERSATIONS WHEN USER CHANGES
-  // ──────────────────────────
+  // load conversations when user changes
   useEffect(() => {
     if (!user) {
       setConversations([]);
@@ -208,13 +206,14 @@ export default function Page() {
   }
 
   async function handleGoogleLogin() {
-    setAuthError(null);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo:
-            typeof window !== "undefined" ? window.location.origin : undefined,
+            typeof window !== "undefined"
+              ? window.location.origin
+              : undefined,
         },
       });
       if (error) {
@@ -333,7 +332,6 @@ export default function Page() {
     const historyForApi = [...messages, userMessage];
     const isFirstMessage = messages.length === 0;
 
-    // For voice-only we still keep a text history in state, just not shown.
     setMessages([
       ...historyForApi,
       { id: assistantId, role: "assistant", content: "" },
@@ -371,11 +369,9 @@ export default function Page() {
         )
       );
 
-      // Voice output: both modes use the same backend.
       if ((opts?.autoVoice || voiceSession) && finalAssistantText.trim()) {
         await speakMessage(assistantId, finalAssistantText, {
           onEnded: () => {
-            // In voice-only mode, automatically start listening again
             if (voiceSession && voiceModeType === "voice_only" && !isRecording) {
               startRecording().catch(err =>
                 console.error("startRecording after reply failed:", err)
@@ -416,7 +412,7 @@ export default function Page() {
 
   // ──────────────────────────
   // VOICE: TTS (ElevenLabs)
-// ──────────────────────────
+  // ──────────────────────────
   async function speakMessage(
     id: string,
     text: string,
@@ -467,7 +463,7 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // VOICE: HOLD TO TALK (mic → /api/transcribe)
+  // VOICE: HOLD TO TALK
   // ──────────────────────────
   async function startRecording() {
     try {
@@ -527,7 +523,6 @@ export default function Page() {
       const text = (data.text as string).trim();
       if (!text) return;
 
-      // Voice-only and voice+text both route through here
       await sendMessage(text, { autoVoice: true });
     } catch (err) {
       console.error("handleAudioBlob error:", err);
@@ -552,10 +547,9 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // VOICE SESSION BUTTON (Use voice mode / End)
+  // VOICE SESSION BUTTON
   // ──────────────────────────
   async function handleVoiceButtonClick() {
-    // If already in voice mode → end it
     if (voiceSession) {
       setVoiceSession(false);
 
@@ -572,7 +566,6 @@ export default function Page() {
       return;
     }
 
-    // Start voice mode
     setVoiceSession(true);
 
     try {
@@ -588,12 +581,10 @@ export default function Page() {
         content: greeting,
       };
 
-      // Show intro only in voice + text mode
       if (voiceModeType === "voice_text") {
         setMessages(prev => [...prev, greetingMsg]);
       }
 
-      // Speak intro in both modes, and auto-start listening in voice-only
       await speakMessage(id, greeting, {
         onEnded: () => {
           if (voiceModeType === "voice_only" && voiceSession && !isRecording) {
@@ -733,7 +724,7 @@ export default function Page() {
   // ──────────────────────────
   if (authLoading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-slate-50">
+      <div className="flex h-screen w-screen items-center justify-center bg-black text-slate-50">
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-slate-200 shadow-lg">
           Loading Adam…
         </div>
@@ -742,19 +733,15 @@ export default function Page() {
   }
 
   if (!user) {
-    // NEW BACKGROUND IMAGE + GLASS LOGIN
+    // LOGIN WITH FULL BACKGROUND IMAGE + GLASS CARD
     return (
-      <div className="relative flex min-h-screen w-screen items-center justify-center overflow-hidden bg-black text-white">
-        {/* Background image */}
+      <div className="relative flex min-h-screen w-screen items-center justify-center overflow-hidden bg-black text-slate-50">
+        {/* Background hero image */}
         <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "url('/adaim.ai.login.page.png')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: 'url("/adaim.ai.login.page.png")' }}
         />
-        {/* Slight dark overlay for contrast */}
+        {/* Dark overlay to keep text readable */}
         <div className="absolute inset-0 bg-black/35" />
 
         {/* Theme toggle */}
@@ -762,28 +749,26 @@ export default function Page() {
           <ThemeToggle />
         </div>
 
-        {/* Glass card */}
-        <div className="relative z-10 flex w-full max-w-5xl justify-center px-4">
-          <div className="w-full max-w-3xl rounded-[40px] border border-white/12 bg-white/10 px-10 py-10 text-sm text-white shadow-[0_40px_120px_rgba(0,0,0,0.85)] backdrop-blur-2xl md:px-14 md:py-12">
-            {/* Header */}
-            <div className="mb-8 text-center">
-              <div className="text-xs tracking-[0.4em] text-white/75">
+        {/* Centered glass card */}
+        <div className="relative z-10 flex w-full justify-center px-4">
+          <div className="w-full max-w-2xl rounded-[32px] border border-white/18 bg-white/12 px-10 py-10 text-slate-50 shadow-[0_40px_140px_rgba(0,0,0,0.9)] backdrop-blur-2xl md:px-14 md:py-12">
+            <div className="mb-6 text-center">
+              <h1 className="text-xs font-semibold tracking-[0.35em] text-slate-100">
                 ADAM AI · ACCESS
-              </div>
-              <p className="mt-2 text-[11px] text-white/65">
-                Sign in to keep your conversations and systemic insights in one place.
+              </h1>
+              <p className="mt-2 text-[11px] text-slate-200">
+                Sign in to keep your conversations and systemic insights in one
+                place.
               </p>
             </div>
 
-            {/* Form */}
-            <form className="space-y-5" onSubmit={handleSignIn}>
-              {/* Email */}
+            <form className="space-y-3" onSubmit={handleSignIn}>
               <div className="space-y-1 text-left">
-                <label className="text-[11px] text-white/80">Email</label>
-                <div className="rounded-full bg-white/14 px-4 py-3 shadow-inner shadow-black/40 ring-1 ring-white/20">
+                <label className="text-[11px] text-slate-200">Email</label>
+                <div className="rounded-full bg-black/25 px-4 py-[9px] shadow-inner shadow-black/40 ring-1 ring-white/22">
                   <input
                     type="email"
-                    className="w-full bg-transparent text-[12px] text-white outline-none placeholder:text-white/55"
+                    className="w-full bg-transparent text-[12px] text-slate-50 outline-none placeholder:text-slate-400"
                     value={authEmail}
                     onChange={e => setAuthEmail(e.target.value)}
                     placeholder="you@example.com"
@@ -791,13 +776,12 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Password */}
               <div className="space-y-1 text-left">
-                <label className="text-[11px] text-white/80">Password</label>
-                <div className="rounded-full bg-white/14 px-4 py-3 shadow-inner shadow-black/40 ring-1 ring-white/20">
+                <label className="text-[11px] text-slate-200">Password</label>
+                <div className="rounded-full bg-black/25 px-4 py-[9px] shadow-inner shadow-black/40 ring-1 ring-white/22">
                   <input
                     type="password"
-                    className="w-full bg-transparent text-[12px] text-white outline-none placeholder:text-white/55"
+                    className="w-full bg-transparent text-[12px] text-slate-50 outline-none placeholder:text-slate-400"
                     value={authPassword}
                     onChange={e => setAuthPassword(e.target.value)}
                     placeholder="••••••••"
@@ -805,9 +789,8 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Error */}
               {authError && (
-                <div className="rounded-xl border border-rose-400/60 bg-rose-500/25 px-3 py-2 text-[11px] text-rose-50">
+                <div className="rounded-md border border-rose-500/60 bg-rose-500/20 px-3 py-2 text-[11px] text-rose-50">
                   {authError}
                 </div>
               )}
@@ -815,23 +798,23 @@ export default function Page() {
               {/* Login button */}
               <button
                 type="submit"
-                className="mt-2 flex h-10 w-full items-center justify-center rounded-full bg-gradient-to-r from-[#da5bff] via-[#a66bff] to-[#5b7dff] text-[11px] font-semibold tracking-[0.22em] text-white shadow-[0_18px_55px_rgba(0,0,0,0.85)] hover:brightness-110"
+                className="mt-3 flex h-10 w-full items-center justify-center rounded-full bg-gradient-to-r from-[#f973ff] via-[#8b5cf6] to-[#4f46e5] text-[11px] font-semibold tracking-[0.18em] text-white shadow-[0_18px_50px_rgba(139,92,246,0.9)] hover:brightness-110"
               >
                 LOGIN
               </button>
 
-              {/* Links */}
-              <div className="mt-2 flex items-center justify-between text-[11px] text-white/75">
+              {/* Links row */}
+              <div className="mt-2 flex items-center justify-between text-[10px] text-slate-200">
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:text-white"
+                  className="underline underline-offset-2 hover:text-slate-50"
                 >
                   Forgot password?
                 </button>
                 <button
                   type="button"
                   onClick={handleSignUp}
-                  className="underline underline-offset-2 hover:text-white"
+                  className="underline underline-offset-2 hover:text-slate-50"
                 >
                   Sign up
                 </button>
@@ -839,31 +822,32 @@ export default function Page() {
             </form>
 
             {/* Divider */}
-            <div className="mt-7 flex items-center gap-3 text-[10px] uppercase tracking-[0.24em] text-white/60">
-              <div className="h-px flex-1 bg-white/20" />
-              <span>Or login with</span>
-              <div className="h-px flex-1 bg-white/20" />
+            <div className="mt-5 flex items-center gap-3 text-[10px] text-slate-200">
+              <div className="h-px flex-1 bg-white/25" />
+              <span>OR LOGIN WITH</span>
+              <div className="h-px flex-1 bg-white/25" />
             </div>
 
-            {/* Google login */}
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-black/55 text-[12px] font-medium text-white/85 ring-1 ring-white/22 hover:bg-black/75"
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
-                  <span className="text-[13px] font-semibold text-[#db4437]">
-                    G
-                  </span>
-                </span>
-                <span>Continue with Google</span>
-              </button>
-            </div>
+            {/* Google button */}
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-black/55 text-[11px] font-medium text-slate-100 ring-1 ring-white/25 hover:bg-black/75"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                <img
+                  src="/google-logo.svg"
+                  alt="Google"
+                  className="h-3 w-3"
+                />
+              </span>
+              <span>Continue with Google</span>
+            </button>
 
             {/* Footer copy */}
-            <p className="mt-6 text-center text-[10px] text-white/70">
-              Adam AI is a truth-seeking conversational intelligence for money, work, and care.
+            <p className="mt-5 text-center text-[10px] text-slate-200">
+              Adam AI is a truth-seeking conversational intelligence for money,
+              work, and care.
             </p>
           </div>
         </div>
@@ -1319,7 +1303,7 @@ export default function Page() {
               </form>
             </div>
           ) : (
-            // NORMAL CHAT VIEW (Voice + Text)
+            // NORMAL CHAT VIEW
             <div className="flex h-full min-h-0 flex-col">
               {/* Messages */}
               <div
