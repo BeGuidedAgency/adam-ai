@@ -1,28 +1,37 @@
 // app/api/conversations/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { createClient } from "@supabase/supabase-js";
 
-// GET /api/conversations
+const supabaseUrl =
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error(
+    "Missing Supabase env vars: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+  );
+}
+
+// Service-role client (bypasses RLS; we always scope by user_id manually)
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// GET /api/conversations?userId=...
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("userId");
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    if (!userId) {
       return NextResponse.json(
-        { error: "Not authenticated" },
-        { status: 401 }
+        { error: "Missing userId in query string" },
+        { status: 400 }
       );
     }
 
     const { data, error } = await supabase
       .from("conversations")
       .select("id, title, created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -45,29 +54,25 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/conversations
+// Body: { userId: string, title?: string }
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "Not authenticated" },
-        { status: 401 }
-      );
-    }
-
     const body = await req.json().catch(() => ({}));
+    const userId: string | undefined = body.userId;
     const title: string | null =
       typeof body.title === "string" ? body.title : null;
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: "Missing userId in request body" },
+        { status: 400 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("conversations")
       .insert({
-        user_id: user.id,
+        user_id: userId,
         title,
       })
       .select("id, title, created_at")
