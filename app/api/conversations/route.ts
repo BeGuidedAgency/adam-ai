@@ -1,36 +1,30 @@
 // app/api/conversations/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 
-const supabaseUrl =
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error(
-    "Missing Supabase env vars: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
-  );
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-// GET /api/conversations?userId=...
+// GET /api/conversations
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId");
+    const supabase = createRouteHandlerClient({ cookies });
 
-    let query = supabase
-      .from("conversations")
-      .select("id, title, created_at")
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (userId) {
-      query = query.eq("user_id", userId);
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
     }
 
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("id, title, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
 
     if (error) {
       console.error("[CONVERSATIONS] GET error:", error);
@@ -53,22 +47,27 @@ export async function GET(req: NextRequest) {
 // POST /api/conversations
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const userId: string | undefined = body.userId;
-    const title: string | null =
-      typeof body.title === "string" ? body.title : null;
+    const supabase = createRouteHandlerClient({ cookies });
 
-    if (!userId) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
       return NextResponse.json(
-        { error: "Missing userId in request body" },
-        { status: 400 }
+        { error: "Not authenticated" },
+        { status: 401 }
       );
     }
+
+    const body = await req.json().catch(() => ({}));
+    const title: string | null =
+      typeof body.title === "string" ? body.title : null;
 
     const { data, error } = await supabase
       .from("conversations")
       .insert({
-        user_id: userId,
+        user_id: user.id,
         title,
       })
       .select("id, title, created_at")

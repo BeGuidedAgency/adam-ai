@@ -2,12 +2,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-// Supabase client for titles + message history
+// Supabase client for DB writes (service role)
 const supabaseUrl =
   process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -29,7 +31,9 @@ function getBaseUrl(req: NextRequest) {
   return `${proto}://${host}`;
 }
 
-// Core Adam AI system prompt (upgraded: energetic signature, tone, filters, internal logic)
+// ===============================
+// ADAM SYSTEM PROMPT
+// ===============================
 const ADAM_SYSTEM_PROMPT = `
 You are ADAM AI.
 
@@ -125,6 +129,19 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
+    // 🔐 Get logged-in user from Supabase Auth
+    const supabaseAuth = createRouteHandlerClient({ cookies });
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     // Expecting: { messages, conversationId, isFirstMessage }
     const messages = body.messages as ClientMessage[] | undefined;
     const conversationId: string | undefined = body.conversationId;
@@ -177,7 +194,7 @@ export async function POST(req: NextRequest) {
     // 2) Compute confidence + annotate context
     let contextText = "";
 
-        if (!ragMatches || ragMatches.length === 0) {
+    if (!ragMatches || ragMatches.length === 0) {
       ragConfidence = "none";
       contextText = "";
     } else {
@@ -186,9 +203,7 @@ export async function POST(req: NextRequest) {
       );
 
       if (hasSimilarity) {
-        // Sort by similarity descending
         ragMatches.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
-
         const topScore = ragMatches[0].similarity ?? 0;
 
         if (topScore >= 0.82) {
@@ -199,7 +214,6 @@ export async function POST(req: NextRequest) {
           ragConfidence = "low";
         }
 
-        // Annotate ALL matches we got, don't throw them away
         const annotated = ragMatches
           .map((m, i) => {
             const score = m.similarity ?? 0;
@@ -216,7 +230,6 @@ export async function POST(req: NextRequest) {
 
         contextText = annotated;
       } else {
-        // No similarity scores provided – fall back to basic behaviour
         ragConfidence = "medium";
         contextText = ragMatches
           .map((m) => m.content)
@@ -224,7 +237,6 @@ export async function POST(req: NextRequest) {
           .join("\n---\n");
       }
     }
-
 
     const confidenceInstruction = `
 RAG CONTEXT CONFIDENCE: ${ragConfidence.toUpperCase()}.
@@ -240,7 +252,7 @@ Rules:
       ? `CONTEXT DOCUMENTS (from Adam's knowledge base, annotated):\n\n${contextText}`
       : `No explicit context was confidently retrieved from the knowledge base for this query. If the user asks for specific systemic details you don't see in your context, say you don't know and stay high-level.`;
 
-    // 3) Build messages in the exact type OpenAI expects
+    // 3) Build messages for OpenAI
     const openAIMessages: OpenAI.ChatCompletionMessageParam[] = [
       {
         role: "system",
@@ -261,9 +273,9 @@ Rules:
         ),
     ];
 
-    // 4) Call OpenAI Chat Completions with Adam's system prompt + context + confidence
+    // 4) Call OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini", // back to your original model
+      model: "gpt-4.1-mini",
       messages: openAIMessages,
       temperature: 0.3,
     });
@@ -277,7 +289,6 @@ Rules:
       );
     }
 
-    // Handle string vs array content
     const assistantText =
       typeof assistantMessage.content === "string"
         ? assistantMessage.content
@@ -346,6 +357,7 @@ Rules:
           conversation_id: string;
           role: string;
           content: string;
+          user_id: string;
         }[] = [];
 
         if (latestUser?.content) {
@@ -353,6 +365,7 @@ Rules:
             conversation_id: conversationId,
             role: "user",
             content: latestUser.content,
+            user_id: user.id,
           });
         }
 
@@ -361,6 +374,7 @@ Rules:
             conversation_id: conversationId,
             role: "assistant",
             content: assistantText,
+            user_id: user.id,
           });
         }
 

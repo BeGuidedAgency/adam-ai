@@ -161,7 +161,7 @@ export default function Page() {
       setVoiceSession(false);
       return;
     }
-    loadConversations(user.id);
+    loadConversations();
   }, [user]);
 
   // auto-scroll chat
@@ -242,9 +242,9 @@ export default function Page() {
   // ──────────────────────────
   // DATA LOADING
   // ──────────────────────────
-  async function loadConversations(userId: string) {
+  async function loadConversations() {
     try {
-      const res = await fetch(`/api/conversations?userId=${userId}`);
+      const res = await fetch("/api/conversations");
       if (!res.ok) {
         console.error("Failed to load conversations:", await res.text());
         return;
@@ -290,7 +290,7 @@ export default function Page() {
     const res = await fetch("/api/conversations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.id }),
+      body: JSON.stringify({}), // backend reads user from session
     });
 
     if (!res.ok) throw new Error("Failed to create conversation");
@@ -382,7 +382,7 @@ export default function Page() {
       }
 
       if (user) {
-        loadConversations(user.id);
+        loadConversations();
       }
     } catch (err) {
       console.error("sendMessage error:", err);
@@ -630,10 +630,7 @@ export default function Page() {
     if (!confirmed) return;
 
     try {
-      const url =
-        user != null
-          ? `/api/conversations/${id}?userId=${user.id}`
-          : `/api/conversations/${id}`;
+      const url = `/api/conversations/${id}`;
 
       const res = await fetch(url, {
         method: "DELETE",
@@ -687,7 +684,7 @@ export default function Page() {
       const res = await fetch(`/api/conversations/${editingConversationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: trimmed, userId: user.id }),
+        body: JSON.stringify({ title: trimmed }),
       });
 
       if (!res.ok) {
