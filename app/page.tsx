@@ -4,6 +4,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Markdown from "react-markdown";
 import { ThemeToggle } from "../components/theme-toggle";
+import {
+  VoiceBubble,
+  type VoiceBubbleStatus,
+} from "./components/voice-bubble";
 
 // ===============================
 // BRAND TOOLTIP COMPONENT
@@ -31,7 +35,7 @@ const Tooltip = ({
 );
 
 // ===============================
-// MAIN PAGE COMPONENT
+// TYPES
 // ===============================
 type Message = {
   id: string;
@@ -49,10 +53,16 @@ type SupabaseUser = {
   email?: string | null;
 };
 
+// ===============================
+// SUPABASE CLIENT
+// ===============================
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// ===============================
+// MAIN PAGE COMPONENT
+// ===============================
 export default function Page() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -71,9 +81,9 @@ export default function Page() {
   // Voice state
   const [isRecording, setIsRecording] = useState(false);
   const [voiceSession, setVoiceSession] = useState(false);
-  const [voiceModeType, setVoiceModeType] = useState<"voice_text" | "voice_only">(
-    "voice_text"
-  );
+  const [voiceModeType, setVoiceModeType] = useState<
+    "voice_text" | "voice_only"
+  >("voice_text");
   const [voiceModeMenuOpen, setVoiceModeMenuOpen] = useState(false);
 
   const [editingConversationId, setEditingConversationId] = useState<
@@ -90,14 +100,23 @@ export default function Page() {
   const hasMessages = messages.length > 0;
   const isVoiceOnlyActive = voiceSession && voiceModeType === "voice_only";
 
-  // Status text in the big bubble
-  const voiceStatusLabel = speakingId
-    ? "Adam is speaking…"
-    : isRecording
-    ? "Listening…"
-    : loading
-    ? "Thinking…"
-    : "Ready";
+  const voiceStatus: VoiceBubbleStatus =
+    speakingId != null
+      ? "speaking"
+      : isRecording
+      ? "listening"
+      : loading
+      ? "thinking"
+      : "idle";
+
+  const voiceStatusLabel =
+    speakingId != null
+      ? "Adam is speaking…"
+      : isRecording
+      ? "Listening…"
+      : loading
+      ? "Thinking…"
+      : "Ready";
 
   // ──────────────────────────
   // AUTH INIT
@@ -1023,12 +1042,10 @@ export default function Page() {
             // VOICE-ONLY SCREEN
             <div className="flex flex-1 flex-col items-center justify-between px-10 py-10 bg-transparent">
               <div className="flex flex-1 items-center justify-center">
-                <div className="relative h-72 w-72 md:h-96 md:w-96 rounded-full bg-[radial-gradient(circle_at_center,#9d8be3,transparent_60%)] animate-pulse flex items-center justify-center">
-                  <button className="rounded-full border border-[#001f3e] bg-white/85 px-6 py-2 text-sm text-slate-900 shadow-sm">
-                    {voiceStatusLabel}
-                  </button>
-                </div>
+                <VoiceBubble status={voiceStatus} label={voiceStatusLabel} />
               </div>
+
+              {/* Bottom mic bar + End button */}
               <div className="w-full max-w-3xl">
                 <div className="flex items-center gap-3 rounded-full border border-[#c7d0f0] bg-white px-5 py-3 text-sm shadow-sm dark:bg-transparent dark:border-[#b9a8fe]">
                   <div className="flex-1 text-xs text-slate-500 dark:text-slate-300">
@@ -1065,7 +1082,7 @@ export default function Page() {
                           strokeWidth="1.6"
                         />
                         <path
-                          d="M5 11a7 7 0 0 0 14 0"
+                          d="M5 11a 7 7 0 0 0 14 0"
                           stroke="currentColor"
                           fill="none"
                           strokeWidth="1.6"
@@ -1174,7 +1191,7 @@ export default function Page() {
                         strokeWidth="1.6"
                       />
                       <path
-                        d="M5 11a7 7 0 0 0 14 0"
+                        d="M5 11a 7 7 0 0 0 14 0"
                         stroke="currentColor"
                         fill="none"
                         strokeWidth="1.6"
@@ -1277,7 +1294,8 @@ export default function Page() {
                                 ),
                                 ul: ({ children }) => (
                                   <ul className="list-disc ml-4 mb-1 space-y-0.5">
-                                    {children}</ul>
+                                    {children}
+                                  </ul>
                                 ),
                               }}
                             >
@@ -1351,7 +1369,7 @@ export default function Page() {
                           strokeWidth="1.6"
                         />
                         <path
-                          d="M5 11a7 7 0 0 0 14 0"
+                          d="M5 11a 7 7 0 0 0 14 0"
                           stroke="currentColor"
                           fill="none"
                           strokeWidth="1.6"
