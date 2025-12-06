@@ -23,10 +23,10 @@ const Tooltip = ({
     {children}
     <div
       className="
-        pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2
+        absolute bottom-full left-1/2 -translate-x-1/2 mb-2
         whitespace-nowrap rounded-md bg-[#001f3e] text-[#f2fdff]
         px-2 py-1 text-[10px] opacity-0 group-hover:opacity-100
-        transition-opacity shadow-md
+        transition-opacity shadow-md pointer-events-none
       "
     >
       {text}
@@ -332,7 +332,6 @@ export default function Page() {
     const historyForApi = [...messages, userMessage];
     const isFirstMessage = messages.length === 0;
 
-    // For voice-only we still keep a text history in state, just not shown.
     setMessages([
       ...historyForApi,
       { id: assistantId, role: "assistant", content: "" },
@@ -370,11 +369,9 @@ export default function Page() {
         )
       );
 
-      // Voice output: both modes use the same backend.
       if ((opts?.autoVoice || voiceSession) && finalAssistantText.trim()) {
         await speakMessage(assistantId, finalAssistantText, {
           onEnded: () => {
-            // In voice-only mode, automatically start listening again
             if (voiceSession && voiceModeType === "voice_only" && !isRecording) {
               startRecording().catch(err =>
                 console.error("startRecording after reply failed:", err)
@@ -466,7 +463,7 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // VOICE: HOLD TO TALK (mic → /api/transcribe)
+  // VOICE: HOLD TO TALK
   // ──────────────────────────
   async function startRecording() {
     try {
@@ -526,7 +523,6 @@ export default function Page() {
       const text = (data.text as string).trim();
       if (!text) return;
 
-      // Voice-only and voice+text both route through here
       await sendMessage(text, { autoVoice: true });
     } catch (err) {
       console.error("handleAudioBlob error:", err);
@@ -551,10 +547,9 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // VOICE SESSION BUTTON (Use voice mode / End)
+  // VOICE SESSION BUTTON
   // ──────────────────────────
   async function handleVoiceButtonClick() {
-    // If already in voice mode → end it
     if (voiceSession) {
       setVoiceSession(false);
 
@@ -571,7 +566,6 @@ export default function Page() {
       return;
     }
 
-    // Start voice mode
     setVoiceSession(true);
 
     try {
@@ -587,12 +581,10 @@ export default function Page() {
         content: greeting,
       };
 
-      // Show intro only in voice + text mode
       if (voiceModeType === "voice_text") {
         setMessages(prev => [...prev, greetingMsg]);
       }
 
-      // Speak intro in both modes, and auto-start listening in voice-only
       await speakMessage(id, greeting, {
         onEnded: () => {
           if (voiceModeType === "voice_only" && voiceSession && !isRecording) {
@@ -728,7 +720,7 @@ export default function Page() {
   }
 
   // ──────────────────────────
-  // AUTH SCREEN – NEW ORB + GLASS PANEL
+  // AUTH SCREENS
   // ──────────────────────────
   if (authLoading) {
     return (
@@ -741,111 +733,122 @@ export default function Page() {
   }
 
   if (!user) {
+    // LOGIN WITH FULL BACKGROUND IMAGE + GLASS CARD
     return (
       <div className="relative flex min-h-screen w-screen items-center justify-center overflow-hidden bg-black text-slate-50">
-        {/* Background orb + hand image */}
+        {/* Background hero image */}
         <div
-          className="pointer-events-none absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('/adaim.ai.login.page.png')" }}
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: 'url("/adaim.ai.login.page.png")' }}
         />
-        {/* Slight dark overlay for contrast */}
-        <div className="pointer-events-none absolute inset-0 bg-black/30" />
+        {/* Dark overlay to keep text readable */}
+        <div className="absolute inset-0 bg-black/35" />
 
         {/* Theme toggle */}
         <div className="absolute right-6 top-6 z-20">
           <ThemeToggle />
         </div>
 
-        {/* ADAM wordmark inside orb area */}
-        <div className="pointer-events-none absolute top-[11%] left-1/2 -translate-x-1/2 text-4xl tracking-[0.35em] text-white/90 uppercase">
-          <span className="font-light">ADAM</span>
-        </div>
+        {/* Centered glass card */}
+        <div className="relative z-10 flex w-full justify-center px-4">
+          <div className="w-full max-w-2xl rounded-[32px] border border-white/18 bg-white/12 px-10 py-10 text-slate-50 shadow-[0_40px_140px_rgba(0,0,0,0.9)] backdrop-blur-2xl md:px-14 md:py-12">
+            <div className="mb-6 text-center">
+              <h1 className="text-xs font-semibold tracking-[0.35em] text-slate-100">
+                ADAM AI · ACCESS
+              </h1>
+              <p className="mt-2 text-[11px] text-slate-200">
+                Sign in to keep your conversations and systemic insights in one
+                place.
+              </p>
+            </div>
 
-        {/* Tall frosted glass panel integrated with orb + hand */}
-        <div className="relative z-10 flex w-full justify-center">
-          <div className="relative mt-[9vh] mb-[6vh] w-full max-w-4xl rounded-[40px] border border-white/22 bg-white/8 px-12 py-10 shadow-[0_40px_160px_rgba(0,0,0,0.85)] backdrop-blur-3xl md:px-16 md:py-12">
-            {/* Form stack centered under orb */}
-            <form
-              className="flex flex-col items-center gap-3"
-              onSubmit={handleSignIn}
-            >
-              {/* Email */}
-              <div className="w-full max-w-xl">
-                <div className="rounded-full bg-white/16 px-5 py-[11px] shadow-inner shadow-black/40">
+            <form className="space-y-3" onSubmit={handleSignIn}>
+              <div className="space-y-1 text-left">
+                <label className="text-[11px] text-slate-200">Email</label>
+                <div className="rounded-full bg-black/25 px-4 py-[9px] shadow-inner shadow-black/40 ring-1 ring-white/22">
                   <input
                     type="email"
-                    className="w-full bg-transparent text-[13px] text-slate-50 outline-none placeholder:text-slate-200/75"
+                    className="w-full bg-transparent text-[12px] text-slate-50 outline-none placeholder:text-slate-400"
                     value={authEmail}
                     onChange={e => setAuthEmail(e.target.value)}
-                    placeholder="Email"
+                    placeholder="you@example.com"
                   />
                 </div>
               </div>
 
-              {/* Password */}
-              <div className="w-full max-w-xl">
-                <div className="rounded-full bg-white/16 px-5 py-[11px] shadow-inner shadow-black/40">
+              <div className="space-y-1 text-left">
+                <label className="text-[11px] text-slate-200">Password</label>
+                <div className="rounded-full bg-black/25 px-4 py-[9px] shadow-inner shadow-black/40 ring-1 ring-white/22">
                   <input
                     type="password"
-                    className="w-full bg-transparent text-[13px] text-slate-50 outline-none placeholder:text-slate-200/75"
+                    className="w-full bg-transparent text-[12px] text-slate-50 outline-none placeholder:text-slate-400"
                     value={authPassword}
                     onChange={e => setAuthPassword(e.target.value)}
-                    placeholder="Password"
+                    placeholder="••••••••"
                   />
                 </div>
               </div>
 
               {authError && (
-                <div className="w-full max-w-xl rounded-md border border-rose-500/60 bg-rose-500/20 px-3 py-2 text-[11px] text-rose-50">
+                <div className="rounded-md border border-rose-500/60 bg-rose-500/20 px-3 py-2 text-[11px] text-rose-50">
                   {authError}
                 </div>
               )}
 
-              {/* LOGIN button (same width & pill style) */}
-              <div className="mt-1 w-full max-w-xl">
-                <button
-                  type="submit"
-                  className="flex h-10 w-full items-center justify-center rounded-full bg-gradient-to-r from-[#f973ff] via-[#8b5cf6] to-[#38bdf8] text-[11px] font-semibold tracking-[0.22em] text-white shadow-[0_18px_45px_rgba(59,130,246,0.8)]"
-                >
-                  LOGIN
-                </button>
-              </div>
+              {/* Login button */}
+              <button
+                type="submit"
+                className="mt-3 flex h-10 w-full items-center justify-center rounded-full bg-gradient-to-r from-[#f973ff] via-[#8b5cf6] to-[#4f46e5] text-[11px] font-semibold tracking-[0.18em] text-white shadow-[0_18px_50px_rgba(139,92,246,0.9)] hover:brightness-110"
+              >
+                LOGIN
+              </button>
 
-              {/* Forgot / Sign up row just under LOGIN */}
-              <div className="mt-1 flex w-full max-w-xl items-center justify-between text-[11px] text-slate-200/80">
+              {/* Links row */}
+              <div className="mt-2 flex items-center justify-between text-[10px] text-slate-200">
                 <button
                   type="button"
-                  className="underline underline-offset-2 hover:text-white"
+                  className="underline underline-offset-2 hover:text-slate-50"
                 >
                   Forgot password?
                 </button>
                 <button
                   type="button"
                   onClick={handleSignUp}
-                  className="underline underline-offset-2 hover:text-white"
+                  className="underline underline-offset-2 hover:text-slate-50"
                 >
                   Sign up
                 </button>
               </div>
-
-              {/* OR + Google icon */}
-              <div className="mt-6 flex flex-col items-center gap-3">
-                <span className="text-[10px] tracking-[0.25em] text-slate-200/80 uppercase">
-                  OR LOGIN WITH
-                </span>
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-[0_10px_30px_rgba(0,0,0,0.6)]"
-                >
-                  <img
-                    src="/google-logo.svg"
-                    alt="Google"
-                    className="h-4 w-4"
-                  />
-                </button>
-              </div>
             </form>
+
+            {/* Divider */}
+            <div className="mt-5 flex items-center gap-3 text-[10px] text-slate-200">
+              <div className="h-px flex-1 bg-white/25" />
+              <span>OR LOGIN WITH</span>
+              <div className="h-px flex-1 bg-white/25" />
+            </div>
+
+            {/* Google button */}
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-black/55 text-[11px] font-medium text-slate-100 ring-1 ring-white/25 hover:bg-black/75"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+                <img
+                  src="/google-logo.svg"
+                  alt="Google"
+                  className="h-3 w-3"
+                />
+              </span>
+              <span>Continue with Google</span>
+            </button>
+
+            {/* Footer copy */}
+            <p className="mt-5 text-center text-[10px] text-slate-200">
+              Adam AI is a truth-seeking conversational intelligence for money,
+              work, and care.
+            </p>
           </div>
         </div>
       </div>
@@ -1300,7 +1303,7 @@ export default function Page() {
               </form>
             </div>
           ) : (
-            // NORMAL CHAT VIEW (Voice + Text)
+            // NORMAL CHAT VIEW
             <div className="flex h-full min-h-0 flex-col">
               {/* Messages */}
               <div
